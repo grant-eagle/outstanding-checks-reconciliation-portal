@@ -40,7 +40,11 @@ if not require_login():
 
 
 # ── Sidebar ─────────────────────────────────────────────────────────────────
+subsidiaries = [s.strip() for s in st.secrets.get("SUBSIDIARIES", "Default").split(",")]
+
 st.sidebar.title("Check Reconciliation")
+subsidiary = st.sidebar.selectbox("Subsidiary", subsidiaries)
+st.sidebar.divider()
 page = st.sidebar.radio("", ["Upload Files", "Reconciliation & Dashboard"])
 st.sidebar.divider()
 if st.sidebar.button("Log Out"):
@@ -52,7 +56,7 @@ if st.sidebar.button("Log Out"):
 # PAGE: UPLOAD
 # ════════════════════════════════════════════════════════════════════════════
 if page == "Upload Files":
-    st.title("Upload Check Files")
+    st.title(f"Upload Check Files — {subsidiary}")
     st.caption(
         "Upload CSVs to append new records to each database. "
         "Rows that exactly match existing records are automatically skipped."
@@ -86,7 +90,7 @@ if page == "Upload Files":
 
                     if st.button("Add to Issued Checks Database", type="primary", key="btn_issued"):
                         with st.spinner("Saving…"):
-                            result = upsert_issued_checks(filtered)
+                            result = upsert_issued_checks(filtered, subsidiary)
                         st.success(f"{result['inserted']:,} rows added · {result['skipped']:,} duplicates skipped")
             except Exception as exc:
                 st.error(f"Could not read file: {exc}")
@@ -121,7 +125,7 @@ if page == "Upload Files":
 
                     if st.button("Add to Cleared Checks Database", type="primary", key="btn_cleared"):
                         with st.spinner("Saving…"):
-                            result = upsert_cleared_checks(filtered)
+                            result = upsert_cleared_checks(filtered, subsidiary)
                         st.success(f"{result['inserted']:,} rows added · {result['skipped']:,} duplicates skipped")
             except Exception as exc:
                 st.error(f"Could not read file: {exc}")
@@ -131,11 +135,11 @@ if page == "Upload Files":
 # PAGE: RECONCILIATION & DASHBOARD
 # ════════════════════════════════════════════════════════════════════════════
 elif page == "Reconciliation & Dashboard":
-    st.title("Reconciliation & Dashboard")
+    st.title(f"Reconciliation & Dashboard — {subsidiary}")
 
     with st.spinner("Loading data…"):
-        issued = get_issued_checks()
-        cleared = get_cleared_checks()
+        issued = get_issued_checks(subsidiary)
+        cleared = get_cleared_checks(subsidiary)
 
     if issued.empty:
         st.warning("No issued checks in the database yet. Go to **Upload Files** to get started.")
@@ -151,11 +155,7 @@ elif page == "Reconciliation & Dashboard":
     k1.metric("Issued Checks", f"{stats['total_issued']:,}", f"${stats['issued_amount']:,.2f}")
     k2.metric("Cleared Checks", f"{stats['total_cleared']:,}", f"${stats['cleared_amount']:,.2f}")
     k3.metric("Outstanding Checks", f"{stats['total_outstanding']:,}", f"${stats['outstanding_amount']:,.2f}")
-    k4.metric(
-        "Total Discrepancies",
-        f"{stats['amount_mismatches'] + stats['ghost_checks']:,}",
-        delta_color="inverse",
-    )
+    k4.metric("Total Discrepancies", f"{stats['amount_mismatches'] + stats['ghost_checks']:,}", delta_color="inverse")
 
     st.divider()
 
@@ -180,7 +180,7 @@ elif page == "Reconciliation & Dashboard":
         st.download_button(
             label="Download Outstanding Checks CSV",
             data=buf.getvalue(),
-            file_name=f"outstanding_checks_{pd.Timestamp.today().strftime('%Y%m%d')}.csv",
+            file_name=f"outstanding_checks_{subsidiary.replace(' ', '_')}_{pd.Timestamp.today().strftime('%Y%m%d')}.csv",
             mime="text/csv",
             type="primary",
         )
@@ -196,7 +196,6 @@ elif page == "Reconciliation & Dashboard":
         f"Long Outstanding 90+ Days  ({stats['long_outstanding_count']})",
     ])
 
-    # Tab 1 – Amount mismatches
     with tab1:
         mm = disc["amount_mismatches"]
         if mm.empty:
@@ -228,7 +227,6 @@ elif page == "Reconciliation & Dashboard":
             fig.add_hline(y=0, line_dash="dash", line_color="gray")
             st.plotly_chart(fig, use_container_width=True)
 
-    # Tab 2 – Ghost checks
     with tab2:
         gc = disc["ghost_checks"]
         if gc.empty:
@@ -240,7 +238,6 @@ elif page == "Reconciliation & Dashboard":
             display["Amount"] = display["Amount"].map("${:,.2f}".format)
             st.dataframe(display, use_container_width=True, hide_index=True)
 
-    # Tab 3 – Long outstanding
     with tab3:
         lo = disc["long_outstanding"]
         if lo.empty:
