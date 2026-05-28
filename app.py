@@ -1,7 +1,6 @@
 import io
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 
 def fmt_acct(val: float) -> str:
     """Format a number in accounting style: $1,234.56 or $(1,234.56) for negatives."""
@@ -488,15 +487,6 @@ elif page == "Reconciliation & Dashboard":
                 file_name=f"amount_mismatches_{subsidiary.replace(' ', '_')}_as_of_{as_of_date.strftime('%Y%m%d')}.csv",
                 mime="text/csv")
 
-            fig = px.bar(
-                pd.DataFrame({"Check #": display["Check #"], "Variance": variance_raw}),
-                x="Check #", y="Variance",
-                title="Variance per Check (Cleared Amount − Issued Amount)",
-                color="Variance", color_continuous_scale="RdYlGn", labels={"Variance": "$ Variance"},
-            )
-            fig.add_hline(y=0, line_dash="dash", line_color="gray")
-            st.plotly_chart(fig, use_container_width=True)
-
     with tab2:
         gc = disc["ghost_checks"]
         if gc.empty:
@@ -577,13 +567,6 @@ elif page == "Reconciliation & Dashboard":
             st.download_button("Download Long Outstanding", data=buf.getvalue(),
                 file_name=f"long_outstanding_{subsidiary.replace(' ', '_')}_as_of_{as_of_date.strftime('%Y%m%d')}.csv",
                 mime="text/csv")
-
-            fig = px.histogram(
-                lo, x="days_outstanding", nbins=20,
-                title="Distribution of Days Outstanding (90+ day checks)",
-                labels={"days_outstanding": "Days Outstanding"},
-            )
-            st.plotly_chart(fig, use_container_width=True)
 
     # ── Combined discrepancy download ─────────────────────────────────────
     _all_discs = []
