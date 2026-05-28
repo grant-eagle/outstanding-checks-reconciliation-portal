@@ -19,6 +19,7 @@ from database import (
     get_cleared_checks,
     get_seed_checks,
     load_seed_checks,
+    clear_seed_checks,
 )
 from reconciliation import reconcile
 
@@ -301,10 +302,9 @@ elif page == "Seed Upload (Admin)":
 
     existing_seed = get_seed_checks(subsidiary)
     if not existing_seed.empty:
-        st.warning(
+        st.info(
             f"**{subsidiary}** already has {len(existing_seed):,} seed records "
-            f"totalling {fmt_acct(existing_seed['amount'].sum())}. "
-            "To replace them, contact your Supabase admin to clear the seed_checks table for this subsidiary."
+            f"totalling {fmt_acct(existing_seed['amount'].sum())}."
         )
         st.dataframe(
             existing_seed[["check_number", "payment_date", "amount"]]
@@ -313,6 +313,14 @@ elif page == "Seed Upload (Admin)":
             use_container_width=True,
             hide_index=True,
         )
+        st.divider()
+        st.subheader("Clear Seed Data")
+        st.warning(f"This will permanently delete all {len(existing_seed):,} seed records for **{subsidiary}**. You can then re-upload a corrected file.")
+        if st.button("Clear Seed Data for This Subsidiary", type="primary"):
+            with st.spinner("Clearing…"):
+                clear_seed_checks(subsidiary)
+            st.success("Seed data cleared. You may now upload a new file.")
+            st.rerun()
         st.stop()
 
     st.subheader("Upload Historical Outstanding Checks (as of 12/31/2025)")

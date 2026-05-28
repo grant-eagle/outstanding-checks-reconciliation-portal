@@ -123,6 +123,10 @@ def get_seed_checks(subsidiary: str) -> pd.DataFrame:
     return _fetch_all("seed_checks", {"subsidiary": subsidiary})
 
 
+def clear_seed_checks(subsidiary: str) -> None:
+    _client().table("seed_checks").delete().eq("subsidiary", subsidiary).execute()
+
+
 def load_seed_checks(df: pd.DataFrame, subsidiary: str) -> dict:
     """Insert seed checks for a subsidiary. Protected at DB level — no delete via anon key."""
     df = df.copy()
