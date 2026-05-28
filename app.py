@@ -66,6 +66,176 @@ def cached_annotations(subsidiary: str):
 def load_ach_data(subsidiary: str):
     return get_issued_ach(subsidiary), get_cleared_ach(subsidiary)
 
+
+@st.fragment
+def _discrepancy_section(subsidiary, as_of_date, disc, stats, ann_lookup):
+    """Isolated fragment so cell edits don't rerun the full page."""
+
+    def _apply(df, disc_type):
+        df["Next Steps"] = df["Check #"].astype(str).map(
+            lambda cn: ann_lookup.get((disc_type, cn.strip()), {}).get("next_steps", "")
+        )
+        df["Notes"] = df["Check #"].astype(str).map(
+            lambda cn: ann_lookup.get((disc_type, cn.strip()), {}).get("notes", "")
+        )
+        return df
+
+    _next_steps = [
+        "",
+        "Reach out to CNB",
+        "CNB Labeled Incorrect Check # - Remove Incorrect Check # from OS Checks",
+        "Bank Error",
+        "Possible Fraud",
+        "Custom",
+    ]
+    _cfg = {
+        "Next Steps": st.column_config.SelectboxColumn("Next Steps", options=_next_steps, required=False),
+        "Notes": st.column_config.TextColumn("Notes (required for Custom)"),
+    }
+
+    tab1, tab2, tab3, tab4 = st.tabs([
+        f"Amount Mismatches  ({stats['amount_mismatches']})",
+        f"Unrecognized Cleared Checks  ({stats['ghost_checks']})",
+        f"Void Amount Mismatches  ({stats['void_mismatches']})",
+        f"Long Outstanding 90+ Days  ({stats['long_outstanding_count']})",
+    ])
+
+    edited_mm = edited_gc = edited_vm = edited_lo = pd.DataFrame()
+
+    with tab1:
+        mm = disc["amount_mismatches"]
+        if mm.empty:
+            st.success("No amount mismatches.")
+        else:
+            st.caption("These checks were found in both databases but the amounts do not match.")
+            display = mm[["check_number", "payment_date", "amount", "cleared_amount", "variance", "cleared_date", "cleared_status"]].copy()
+            display.columns = ["Check #", "Issue Date", "Issued Amt", "Cleared Amt", "Variance", "Cleared Date", "Status"]
+            display["Issue Date"] = fmt_date(display["Issue Date"])
+            display["Cleared Date"] = fmt_date(display["Cleared Date"])
+            display["Issued Amt"] = display["Issued Amt"].map(fmt_acct)
+            display["Cleared Amt"] = display["Cleared Amt"].map(fmt_acct)
+            display["Variance"] = display["Variance"].map(fmt_acct)
+            _apply(display, "amount_mismatch")
+            edited_mm = st.data_editor(display, column_config=_cfg,
+                disabled=[c for c in display.columns if c not in ("Next Steps", "Notes")],
+                use_container_width=True, hide_index=True, key=f"editor_mm_{subsidiary}")
+            buf = io.StringIO()
+            edited_mm.to_csv(buf, index=False)
+            st.download_button("Download Amount Mismatches", data=buf.getvalue(),
+                file_name=f"amount_mismatches_{subsidiary.replace(' ', '_')}_as_of_{as_of_date.strftime('%Y%m%d')}.csv",
+                mime="text/csv")
+
+    with tab2:
+        gc = disc["ghost_checks"]
+        if gc.empty:
+            st.success("No unrecognized cleared checks.")
+        else:
+            st.caption("These checks appear in the bank data but have no matching issued check.")
+            display = gc[["check_number", "date", "amount", "description", "status"]].copy()
+            display.columns = ["Check #", "Cleared Date", "Amount", "Description", "Status"]
+            display["Cleared Date"] = fmt_date(display["Cleared Date"])
+            display["Amount"] = display["Amount"].map(fmt_acct)
+            _apply(display, "ghost_check")
+            edited_gc = st.data_editor(display, column_config=_cfg,
+                disabled=[c for c in display.columns if c not in ("Next Steps", "Notes")],
+                use_container_width=True, hide_index=True, key=f"editor_gc_{subsidiary}")
+            buf = io.StringIO()
+            edited_gc.to_csv(buf, index=False)
+            st.download_button("Download Unrecognized Cleared Checks", data=buf.getvalue(),
+                file_name=f"ghost_checks_{subsidiary.replace(' ', '_')}_as_of_{as_of_date.strftime('%Y%m%d')}.csv",
+                mime="text/csv")
+
+    with tab3:
+        vm = disc["void_mismatches"]
+        if vm.empty:
+            st.success("No void amount mismatches.")
+        else:
+            st.caption("These checks were found in the voided file but the void amount does not match the outstanding amount.")
+            display = vm[["check_number", "payment_date", "amount", "void_amount", "void_variance"]].copy()
+            display.columns = ["Check #", "Issue Date", "Outstanding Amt", "Void Amt", "Variance"]
+            display["Issue Date"] = fmt_date(display["Issue Date"])
+            display["Outstanding Amt"] = display["Outstanding Amt"].map(fmt_acct)
+            display["Void Amt"] = display["Void Amt"].map(fmt_acct)
+            display["Variance"] = display["Variance"].map(fmt_acct)
+            _apply(display, "void_mismatch")
+            edited_vm = st.data_editor(display, column_config=_cfg,
+                disabled=[c for c in display.columns if c not in ("Next Steps", "Notes")],
+                use_container_width=True, hide_index=True, key=f"editor_vm_{subsidiary}")
+            buf = io.StringIO()
+            edited_vm.to_csv(buf, index=False)
+            st.download_button("Download Void Mismatches", data=buf.getvalue(),
+                file_name=f"void_mismatches_{subsidiary.replace(' ', '_')}_as_of_{as_of_date.strftime('%Y%m%d')}.csv",
+                mime="text/csv")
+
+    with tab4:
+        lo = disc["long_outstanding"]
+        if lo.empty:
+            st.success("No checks outstanding for 90+ days.")
+        else:
+            st.caption("Issued checks that have not cleared within 90 days.")
+            display = (
+                lo[["check_number", "payment_date", "amount", "days_outstanding"]]
+                .sort_values("days_outstanding", ascending=False).copy()
+            )
+            display.columns = ["Check #", "Issue Date", "Amount", "Days Outstanding"]
+            display["Issue Date"] = fmt_date(display["Issue Date"])
+            display["Amount"] = display["Amount"].map(fmt_acct)
+            _apply(display, "long_outstanding")
+            edited_lo = st.data_editor(display, column_config=_cfg,
+                disabled=[c for c in display.columns if c not in ("Next Steps", "Notes")],
+                use_container_width=True, hide_index=True, key=f"editor_lo_{subsidiary}")
+            buf = io.StringIO()
+            edited_lo.to_csv(buf, index=False)
+            st.download_button("Download Long Outstanding", data=buf.getvalue(),
+                file_name=f"long_outstanding_{subsidiary.replace(' ', '_')}_as_of_{as_of_date.strftime('%Y%m%d')}.csv",
+                mime="text/csv")
+
+    # ── Save + combined download ──────────────────────────────────────────
+    _all_discs = []
+    for _label, _df in [
+        ("Amount Mismatch", edited_mm),
+        ("Unrecognized Cleared Check", edited_gc),
+        ("Void Amount Mismatch", edited_vm),
+        ("Long Outstanding (90+ days)", edited_lo),
+    ]:
+        if not _df.empty:
+            _d = _df.copy()
+            _d.insert(0, "Discrepancy Type", _label)
+            _all_discs.append(_d)
+
+    _save_col, _dl_col = st.columns([1, 2])
+    if _save_col.button("Save Annotations", type="primary"):
+        _rows = []
+        for _disc_type, _edited in [
+            ("amount_mismatch", edited_mm),
+            ("ghost_check", edited_gc),
+            ("void_mismatch", edited_vm),
+            ("long_outstanding", edited_lo),
+        ]:
+            if not _edited.empty:
+                for _, _er in _edited.iterrows():
+                    _rows.append({
+                        "discrepancy_type": _disc_type,
+                        "check_number": str(_er["Check #"]),
+                        "next_steps": _er.get("Next Steps", "") or "",
+                        "notes": _er.get("Notes", "") or "",
+                    })
+        with st.spinner("Saving…"):
+            save_annotations(subsidiary, _rows)
+        st.cache_data.clear()
+        st.rerun()
+
+    if _all_discs:
+        _combined = pd.concat(_all_discs, ignore_index=True)
+        _buf = io.StringIO()
+        _combined.to_csv(_buf, index=False)
+        _dl_col.download_button(
+            "Download All Discrepancies with Annotations",
+            data=_buf.getvalue(),
+            file_name=f"all_discrepancies_{subsidiary.replace(' ', '_')}_as_of_{as_of_date.strftime('%Y%m%d')}.csv",
+            mime="text/csv",
+        )
+
 st.set_page_config(
     page_title="Check Reconciliation Portal",
     page_icon="🏦",
@@ -382,15 +552,6 @@ elif page == "Reconciliation & Dashboard":
                 "notes": _ar.get("notes", "") or "",
             }
 
-    def _apply_ann(df: pd.DataFrame, disc_type: str) -> pd.DataFrame:
-        df["Next Steps"] = df["Check #"].astype(str).map(
-            lambda cn: _ann_lookup.get((disc_type, cn.strip()), {}).get("next_steps", "")
-        )
-        df["Notes"] = df["Check #"].astype(str).map(
-            lambda cn: _ann_lookup.get((disc_type, cn.strip()), {}).get("notes", "")
-        )
-        return df
-
     results = reconcile(issued, cleared, seed, voided)
     stats = results["stats"]
     outstanding = results["outstanding"]
@@ -440,185 +601,7 @@ elif page == "Reconciliation & Dashboard":
     st.subheader("Discrepancy Dashboard")
     st.caption("Select a next step for each item. Use the Notes column for custom explanations. Download per tab or all at once below.")
 
-    NEXT_STEPS = [
-        "",
-        "Reach out to CNB",
-        "CNB Labeled Incorrect Check # - Remove Incorrect Check # from OS Checks",
-        "Bank Error",
-        "Possible Fraud",
-        "Custom",
-    ]
-
-    _editor_cfg = {
-        "Next Steps": st.column_config.SelectboxColumn("Next Steps", options=NEXT_STEPS, required=False),
-        "Notes": st.column_config.TextColumn("Notes (required for Custom)"),
-    }
-
-    tab1, tab2, tab3, tab4 = st.tabs([
-        f"Amount Mismatches  ({stats['amount_mismatches']})",
-        f"Unrecognized Cleared Checks  ({stats['ghost_checks']})",
-        f"Void Amount Mismatches  ({stats['void_mismatches']})",
-        f"Long Outstanding 90+ Days  ({stats['long_outstanding_count']})",
-    ])
-
-    edited_mm = edited_gc = edited_vm = edited_lo = pd.DataFrame()
-
-    with tab1:
-        mm = disc["amount_mismatches"]
-        if mm.empty:
-            st.success("No amount mismatches.")
-        else:
-            st.caption("These checks were found in both databases but the amounts do not match.")
-            display = mm[["check_number", "payment_date", "amount", "cleared_amount", "variance", "cleared_date", "cleared_status"]].copy()
-            display.columns = ["Check #", "Issue Date", "Issued Amt", "Cleared Amt", "Variance", "Cleared Date", "Status"]
-            display["Issue Date"] = fmt_date(display["Issue Date"])
-            display["Cleared Date"] = fmt_date(display["Cleared Date"])
-            variance_raw = display["Variance"].copy()
-            display["Issued Amt"] = display["Issued Amt"].map(fmt_acct)
-            display["Cleared Amt"] = display["Cleared Amt"].map(fmt_acct)
-            display["Variance"] = display["Variance"].map(fmt_acct)
-            _apply_ann(display, "amount_mismatch")
-
-            edited_mm = st.data_editor(
-                display,
-                column_config=_editor_cfg,
-                disabled=[c for c in display.columns if c not in ("Next Steps", "Notes")],
-                use_container_width=True, hide_index=True, key=f"editor_mm_{subsidiary}",
-            )
-
-            buf = io.StringIO()
-            edited_mm.to_csv(buf, index=False)
-            st.download_button("Download Amount Mismatches", data=buf.getvalue(),
-                file_name=f"amount_mismatches_{subsidiary.replace(' ', '_')}_as_of_{as_of_date.strftime('%Y%m%d')}.csv",
-                mime="text/csv")
-
-    with tab2:
-        gc = disc["ghost_checks"]
-        if gc.empty:
-            st.success("No unrecognized cleared checks.")
-        else:
-            st.caption("These checks appear in the bank data but have no matching issued check.")
-            display = gc[["check_number", "date", "amount", "description", "status"]].copy()
-            display.columns = ["Check #", "Cleared Date", "Amount", "Description", "Status"]
-            display["Cleared Date"] = fmt_date(display["Cleared Date"])
-            display["Amount"] = display["Amount"].map(fmt_acct)
-            _apply_ann(display, "ghost_check")
-
-            edited_gc = st.data_editor(
-                display,
-                column_config=_editor_cfg,
-                disabled=[c for c in display.columns if c not in ("Next Steps", "Notes")],
-                use_container_width=True, hide_index=True, key=f"editor_gc_{subsidiary}",
-            )
-
-            buf = io.StringIO()
-            edited_gc.to_csv(buf, index=False)
-            st.download_button("Download Unrecognized Cleared Checks", data=buf.getvalue(),
-                file_name=f"ghost_checks_{subsidiary.replace(' ', '_')}_as_of_{as_of_date.strftime('%Y%m%d')}.csv",
-                mime="text/csv")
-
-    with tab3:
-        vm = disc["void_mismatches"]
-        if vm.empty:
-            st.success("No void amount mismatches.")
-        else:
-            st.caption("These checks were found in the voided file but the void amount does not match the outstanding amount.")
-            display = vm[["check_number", "payment_date", "amount", "void_amount", "void_variance"]].copy()
-            display.columns = ["Check #", "Issue Date", "Outstanding Amt", "Void Amt", "Variance"]
-            display["Issue Date"] = fmt_date(display["Issue Date"])
-            display["Outstanding Amt"] = display["Outstanding Amt"].map(fmt_acct)
-            display["Void Amt"] = display["Void Amt"].map(fmt_acct)
-            display["Variance"] = display["Variance"].map(fmt_acct)
-            _apply_ann(display, "void_mismatch")
-
-            edited_vm = st.data_editor(
-                display,
-                column_config=_editor_cfg,
-                disabled=[c for c in display.columns if c not in ("Next Steps", "Notes")],
-                use_container_width=True, hide_index=True, key=f"editor_vm_{subsidiary}",
-            )
-
-            buf = io.StringIO()
-            edited_vm.to_csv(buf, index=False)
-            st.download_button("Download Void Mismatches", data=buf.getvalue(),
-                file_name=f"void_mismatches_{subsidiary.replace(' ', '_')}_as_of_{as_of_date.strftime('%Y%m%d')}.csv",
-                mime="text/csv")
-
-    with tab4:
-        lo = disc["long_outstanding"]
-        if lo.empty:
-            st.success("No checks outstanding for 90+ days.")
-        else:
-            st.caption("Issued checks that have not cleared within 90 days.")
-            display = (
-                lo[["check_number", "payment_date", "amount", "days_outstanding"]]
-                .sort_values("days_outstanding", ascending=False)
-                .copy()
-            )
-            display.columns = ["Check #", "Issue Date", "Amount", "Days Outstanding"]
-            display["Issue Date"] = fmt_date(display["Issue Date"])
-            display["Amount"] = display["Amount"].map(fmt_acct)
-            _apply_ann(display, "long_outstanding")
-
-            edited_lo = st.data_editor(
-                display,
-                column_config=_editor_cfg,
-                disabled=[c for c in display.columns if c not in ("Next Steps", "Notes")],
-                use_container_width=True, hide_index=True, key=f"editor_lo_{subsidiary}",
-            )
-
-            buf = io.StringIO()
-            edited_lo.to_csv(buf, index=False)
-            st.download_button("Download Long Outstanding", data=buf.getvalue(),
-                file_name=f"long_outstanding_{subsidiary.replace(' ', '_')}_as_of_{as_of_date.strftime('%Y%m%d')}.csv",
-                mime="text/csv")
-
-    # ── Combined discrepancy download ─────────────────────────────────────
-    _all_discs = []
-    for _label, _df in [
-        ("Amount Mismatch", edited_mm),
-        ("Unrecognized Cleared Check", edited_gc),
-        ("Void Amount Mismatch", edited_vm),
-        ("Long Outstanding (90+ days)", edited_lo),
-    ]:
-        if not _df.empty:
-            _d = _df.copy()
-            _d.insert(0, "Discrepancy Type", _label)
-            _all_discs.append(_d)
-
-    # ── Save annotations to database ─────────────────────────────────────
-    _save_col, _dl_col = st.columns([1, 2])
-    if _save_col.button("Save Annotations", type="primary"):
-        _save_rows = []
-        for _disc_type, _edited in [
-            ("amount_mismatch", edited_mm),
-            ("ghost_check", edited_gc),
-            ("void_mismatch", edited_vm),
-            ("long_outstanding", edited_lo),
-        ]:
-            if not _edited.empty:
-                for _, _er in _edited.iterrows():
-                    _save_rows.append({
-                        "discrepancy_type": _disc_type,
-                        "check_number": str(_er["Check #"]),
-                        "next_steps": _er.get("Next Steps", "") or "",
-                        "notes": _er.get("Notes", "") or "",
-                    })
-        with st.spinner("Saving…"):
-            save_annotations(subsidiary, _save_rows)
-        st.cache_data.clear()
-        st.rerun()
-
-    if _all_discs:
-        _combined = pd.concat(_all_discs, ignore_index=True)
-        _buf = io.StringIO()
-        _combined.to_csv(_buf, index=False)
-        _dl_col.download_button(
-            "Download All Discrepancies with Annotations",
-            data=_buf.getvalue(),
-            file_name=f"all_discrepancies_{subsidiary.replace(' ', '_')}_as_of_{as_of_date.strftime('%Y%m%d')}.csv",
-            mime="text/csv",
-        )
+    _discrepancy_section(subsidiary, as_of_date, disc, stats, _ann_lookup)
 
     # ── ACH Reconciliation ───────────────────────────────────────────────
     st.divider()
