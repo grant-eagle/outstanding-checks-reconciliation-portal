@@ -113,14 +113,17 @@ def upsert_cleared_checks(df: pd.DataFrame, subsidiary: str) -> dict:
 
 def get_date_range(table: str, date_col: str, subsidiary: str) -> str:
     """Return a human-readable date range string for already-uploaded data."""
-    client = _client()
-    mn = client.table(table).select(date_col).eq("subsidiary", subsidiary).order(date_col).limit(1).execute()
-    mx = client.table(table).select(date_col).eq("subsidiary", subsidiary).order(date_col, desc=True).limit(1).execute()
-    if not mn.data or not mx.data:
+    try:
+        client = _client()
+        mn = client.table(table).select(date_col).eq("subsidiary", subsidiary).order(date_col).limit(1).execute()
+        mx = client.table(table).select(date_col).eq("subsidiary", subsidiary).order(date_col, desc=True).limit(1).execute()
+        if not mn.data or not mx.data:
+            return None
+        min_date = pd.to_datetime(mn.data[0][date_col]).strftime("%m/%d/%Y")
+        max_date = pd.to_datetime(mx.data[0][date_col]).strftime("%m/%d/%Y")
+        return f"{min_date} – {max_date}"
+    except Exception:
         return None
-    min_date = pd.to_datetime(mn.data[0][date_col]).strftime("%m/%d/%Y")
-    max_date = pd.to_datetime(mx.data[0][date_col]).strftime("%m/%d/%Y")
-    return f"{min_date} – {max_date}"
 
 
 def get_issued_checks(subsidiary: str) -> pd.DataFrame:
