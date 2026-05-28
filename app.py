@@ -3,6 +3,15 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
+def fmt_acct(val: float) -> str:
+    """Format a number in accounting style: $1,234.56 or $(1,234.56) for negatives."""
+    if pd.isna(val):
+        return ""
+    if val < 0:
+        return f"$({abs(val):,.2f})"
+    return f"${val:,.2f}"
+
+
 from database import (
     upsert_issued_checks,
     upsert_cleared_checks,
@@ -155,9 +164,9 @@ elif page == "Reconciliation & Dashboard":
 
     # ── KPI row ──────────────────────────────────────────────────────────
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Issued Checks", f"{stats['total_issued']:,}", f"${stats['issued_amount']:,.2f}")
-    k2.metric("Cleared Checks", f"{stats['total_cleared']:,}", f"${stats['cleared_amount']:,.2f}")
-    k3.metric("Outstanding Checks", f"{stats['total_outstanding']:,}", f"${stats['outstanding_amount']:,.2f}")
+    k1.metric("Issued Checks", f"{stats['total_issued']:,}", fmt_acct(stats['issued_amount']))
+    k2.metric("Cleared Checks", f"{stats['total_cleared']:,}", fmt_acct(stats['cleared_amount']))
+    k3.metric("Outstanding Checks", f"{stats['total_outstanding']:,}", fmt_acct(stats['outstanding_amount']))
     k4.metric("Total Discrepancies", f"{stats['amount_mismatches'] + stats['ghost_checks']:,}", delta_color="inverse")
 
     st.divider()
@@ -174,7 +183,7 @@ elif page == "Reconciliation & Dashboard":
             .copy()
         )
         display.columns = ["Check Number", "Payment Date", "Amount", "Days Outstanding"]
-        display["Amount"] = display["Amount"].map("${:,.2f}".format)
+        display["Amount"] = display["Amount"].map(fmt_acct)
 
         st.dataframe(display, use_container_width=True, hide_index=True)
 
@@ -213,7 +222,9 @@ elif page == "Reconciliation & Dashboard":
                 return f"background-color: {color}"
 
             st.dataframe(
-                display.style.map(color_variance, subset=["Variance"]),
+                display.style
+                    .map(color_variance, subset=["Variance"])
+                    .format({"Issued Amt": fmt_acct, "Cleared Amt": fmt_acct, "Variance": fmt_acct}),
                 use_container_width=True,
                 hide_index=True,
             )
@@ -238,7 +249,7 @@ elif page == "Reconciliation & Dashboard":
             st.caption("These checks appear in the bank data but have no matching issued check.")
             display = gc[["check_number", "date", "amount", "description", "status"]].copy()
             display.columns = ["Check #", "Cleared Date", "Amount", "Description", "Status"]
-            display["Amount"] = display["Amount"].map("${:,.2f}".format)
+            display["Amount"] = display["Amount"].map(fmt_acct)
             st.dataframe(display, use_container_width=True, hide_index=True)
 
     with tab3:
@@ -253,7 +264,7 @@ elif page == "Reconciliation & Dashboard":
                 .copy()
             )
             display.columns = ["Check #", "Issue Date", "Amount", "Days Outstanding"]
-            display["Amount"] = display["Amount"].map("${:,.2f}".format)
+            display["Amount"] = display["Amount"].map(fmt_acct)
             st.dataframe(display, use_container_width=True, hide_index=True)
 
             fig = px.histogram(
