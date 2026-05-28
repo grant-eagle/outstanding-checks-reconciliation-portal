@@ -317,8 +317,8 @@ elif page == "Seed Upload (Admin)":
 
     st.subheader("Upload Historical Outstanding Checks (as of 12/31/2025)")
     st.caption(
-        "Required columns: **Check Number · Check Batch Date · Export Type · Outstanding Check Amount**  \n"
-        "Only rows where Export Type = **Hardcopy** are imported (ACH/EFT rows are excluded)."
+        "Required columns: **check number · Check Batch Date · Export Type · Outstanding Check Amount**  \n"
+        "Only rows where Export Type = **HARDCOPY** are imported (EFT rows are excluded)."
     )
 
     seed_file = st.file_uploader("Choose CSV", type="csv", key="up_seed")
@@ -326,14 +326,14 @@ elif page == "Seed Upload (Admin)":
     if seed_file:
         try:
             raw = pd.read_csv(seed_file)
-            required = ["Check Number", "Check Batch Date", "Export Type", "Outstanding Check Amount"]
+            required = ["check number", "Check Batch Date", "Export Type", "Outstanding Check Amount"]
             missing = [c for c in required if c not in raw.columns]
             if missing:
                 st.error(f"Missing columns: {', '.join(missing)}")
             else:
                 filtered = raw[raw["Export Type"].astype(str).str.strip().str.lower() == "hardcopy"].copy()
-                filtered = filtered[["Check Number", "Check Batch Date", "Outstanding Check Amount"]].rename(columns={
-                    "Check Number": "check_number",
+                filtered = filtered[["check number", "Check Batch Date", "Outstanding Check Amount"]].rename(columns={
+                    "check number": "check_number",
                     "Check Batch Date": "payment_date",
                     "Outstanding Check Amount": "amount",
                 })
