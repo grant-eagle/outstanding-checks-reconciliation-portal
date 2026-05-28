@@ -17,6 +17,8 @@ from database import (
     upsert_cleared_checks,
     get_issued_checks,
     get_cleared_checks,
+    get_seed_checks,
+    load_seed_checks,
 )
 from reconciliation import reconcile
 
@@ -54,7 +56,7 @@ subsidiaries = [s.strip() for s in st.secrets.get("SUBSIDIARIES", "Default").spl
 st.sidebar.title("Check Reconciliation")
 subsidiary = st.sidebar.selectbox("Subsidiary", subsidiaries)
 st.sidebar.divider()
-page = st.sidebar.radio("", ["Upload Files", "Reconciliation & Dashboard"])
+page = st.sidebar.radio("", ["Upload Files", "Reconciliation & Dashboard", "Seed Upload (Admin)"])
 st.sidebar.divider()
 if st.sidebar.button("Log Out"):
     st.session_state.authenticated = False
@@ -153,22 +155,24 @@ elif page == "Reconciliation & Dashboard":
     with st.spinner("Loading data…"):
         issued = get_issued_checks(subsidiary)
         cleared = get_cleared_checks(subsidiary)
+        seed = get_seed_checks(subsidiary)
 
-    if issued.empty:
-        st.warning("No issued checks in the database yet. Go to **Upload Files** to get started.")
+    if issued.empty and seed.empty:
+        st.warning("No check data in the database yet. Go to **Upload Files** or **Seed Upload (Admin)** to get started.")
         st.stop()
 
-    results = reconcile(issued, cleared)
+    results = reconcile(issued, cleared, seed)
     stats = results["stats"]
     outstanding = results["outstanding"]
     disc = results["discrepancies"]
 
     # ── KPI row ──────────────────────────────────────────────────────────
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Issued Checks", f"{stats['total_issued']:,}", fmt_acct(stats['issued_amount']))
-    k2.metric("Cleared Checks", f"{stats['total_cleared']:,}", fmt_acct(stats['cleared_amount']))
-    k3.metric("Outstanding Checks", f"{stats['total_outstanding']:,}", fmt_acct(stats['outstanding_amount']))
-    k4.metric("Total Discrepancies", f"{stats['amount_mismatches'] + stats['ghost_checks']:,}", delta_color="inverse")
+    k1, k2, k3, k4, k5 = st.columns(5)
+    k1.metric("Seed Checks (Historical)", f"{stats['total_seed']:,}", fmt_acct(stats['seed_amount']))
+    k2.metric("Issued Checks", f"{stats['total_issued']:,}", fmt_acct(stats['issued_amount']))
+    k3.metric("Cleared Checks", f"{stats['total_cleared']:,}", fmt_acct(stats['cleared_amount']))
+    k4.metric("Outstanding Checks", f"{stats['total_outstanding']:,}", fmt_acct(stats['outstanding_amount']))
+    k5.metric("Total Discrepancies", f"{stats['amount_mismatches'] + stats['ghost_checks']:,}", delta_color="inverse")
 
     st.divider()
 
@@ -276,3 +280,77 @@ elif page == "Reconciliation & Dashboard":
                 labels={"days_outstanding": "Days Outstanding"},
             )
             st.plotly_chart(fig, use_container_width=True)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# PAGE: SEED UPLOAD (ADMIN)
+# ════════════════════════════════════════════════════════════════════════════
+elif page == "Seed Upload (Admin)":
+    st.title(f"Seed Upload (Admin) — {subsidiary}")
+    st.caption(
+        "Load the 12/31/2025 historical outstanding checks as the baseline for this subsidiary. "
+        "Once uploaded, seed records cannot be modified or deleted through the app."
+    )
+
+    admin_pw = st.text_input("Admin Password", type="password", key="admin_pw")
+    if not admin_pw:
+        st.stop()
+    if admin_pw != st.secrets.get("ADMIN_PASSWORD", ""):
+        st.error("Incorrect admin password.")
+        st.stop()
+
+    existing_seed = get_seed_checks(subsidiary)
+    if not existing_seed.empty:
+        st.warning(
+            f"**{subsidiary}** already has {len(existing_seed):,} seed records "
+            f"totalling {fmt_acct(existing_seed['amount'].sum())}. "
+            "To replace them, contact your Supabase admin to clear the seed_checks table for this subsidiary."
+        )
+        st.dataframe(
+            existing_seed[["check_number", "payment_date", "amount"]]
+            .rename(columns={"check_number": "Check #", "payment_date": "Payment Date", "amount": "Amount"})
+            .assign(Amount=lambda d: d["Amount"].map(fmt_acct)),
+            use_container_width=True,
+            hide_index=True,
+        )
+        st.stop()
+
+    st.subheader("Upload Historical Outstanding Checks (as of 12/31/2025)")
+    st.caption(
+        "Required columns: **Check Number · Check Batch Date · Export Type · Outstanding Check Amount**  \n"
+        "Only rows where Export Type = **Hardcopy** are imported (ACH/EFT rows are excluded)."
+    )
+
+    seed_file = st.file_uploader("Choose CSV", type="csv", key="up_seed")
+
+    if seed_file:
+        try:
+            raw = pd.read_csv(seed_file)
+            required = ["Check Number", "Check Batch Date", "Export Type", "Outstanding Check Amount"]
+            missing = [c for c in required if c not in raw.columns]
+            if missing:
+                st.error(f"Missing columns: {', '.join(missing)}")
+            else:
+                filtered = raw[raw["Export Type"].astype(str).str.strip().str.lower() == "hardcopy"].copy()
+                filtered = filtered[["Check Number", "Check Batch Date", "Outstanding Check Amount"]].rename(columns={
+                    "Check Number": "check_number",
+                    "Check Batch Date": "payment_date",
+                    "Outstanding Check Amount": "amount",
+                })
+                filtered = filtered[
+                    filtered["check_number"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True) != "0"
+                ].copy()
+
+                st.info(
+                    f"{len(filtered):,} historical check records found "
+                    f"({len(raw) - len(filtered):,} non-check rows excluded)"
+                )
+                st.dataframe(filtered.head(10), use_container_width=True)
+
+                st.warning("This action cannot be undone through the app. Confirm before proceeding.")
+                if st.button("Load Seed Data", type="primary"):
+                    with st.spinner("Loading seed data…"):
+                        result = load_seed_checks(filtered, subsidiary)
+                    st.success(f"{result['inserted']:,} historical checks loaded for {subsidiary}.")
+        except Exception as exc:
+            st.error(f"Could not read file: {exc}")

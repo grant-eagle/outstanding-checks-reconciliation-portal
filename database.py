@@ -117,3 +117,18 @@ def get_issued_checks(subsidiary: str) -> pd.DataFrame:
 
 def get_cleared_checks(subsidiary: str) -> pd.DataFrame:
     return _fetch_all("cleared_checks", {"subsidiary": subsidiary})
+
+
+def get_seed_checks(subsidiary: str) -> pd.DataFrame:
+    return _fetch_all("seed_checks", {"subsidiary": subsidiary})
+
+
+def load_seed_checks(df: pd.DataFrame, subsidiary: str) -> dict:
+    """Insert seed checks for a subsidiary. Protected at DB level — no delete via anon key."""
+    df = df.copy()
+    df["check_number"] = df["check_number"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
+    df["payment_date"] = pd.to_datetime(df["payment_date"]).dt.strftime("%Y-%m-%d")
+    df["amount"] = _clean_amount(df["amount"])
+    df["subsidiary"] = subsidiary
+    _insert_batched("seed_checks", df.to_dict("records"))
+    return {"inserted": len(df)}
