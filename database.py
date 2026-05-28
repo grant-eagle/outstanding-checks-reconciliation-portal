@@ -131,6 +131,33 @@ def get_cleared_checks(subsidiary: str) -> pd.DataFrame:
     return _fetch_all("cleared_checks", {"subsidiary": subsidiary})
 
 
+def get_voided_checks(subsidiary: str) -> pd.DataFrame:
+    return _fetch_all("voided_checks", {"subsidiary": subsidiary})
+
+
+def upsert_voided_checks(df: pd.DataFrame, subsidiary: str) -> dict:
+    df = _normalize_issued(df)
+    df["subsidiary"] = subsidiary
+
+    existing_raw = _fetch_all("voided_checks", {"subsidiary": subsidiary})
+    if not existing_raw.empty:
+        existing = _normalize_issued(existing_raw)
+        existing["subsidiary"] = subsidiary
+        merged = df.merge(
+            existing, on=["payment_date", "check_number", "amount", "subsidiary"],
+            how="left", indicator=True
+        )
+        new_rows = df[merged["_merge"] == "left_only"].reset_index(drop=True)
+    else:
+        new_rows = df
+
+    if new_rows.empty:
+        return {"inserted": 0, "skipped": len(df)}
+
+    _insert_batched("voided_checks", new_rows.to_dict("records"))
+    return {"inserted": len(new_rows), "skipped": len(df) - len(new_rows)}
+
+
 def get_seed_checks(subsidiary: str) -> pd.DataFrame:
     return _fetch_all("seed_checks", {"subsidiary": subsidiary})
 

@@ -15,8 +15,10 @@ def fmt_acct(val: float) -> str:
 from database import (
     upsert_issued_checks,
     upsert_cleared_checks,
+    upsert_voided_checks,
     get_issued_checks,
     get_cleared_checks,
+    get_voided_checks,
     get_seed_checks,
     load_seed_checks,
     clear_seed_checks,
@@ -158,6 +160,45 @@ if page == "Upload Files":
             except Exception as exc:
                 st.error(f"Could not read file: {exc}")
 
+    # ── Voided Checks ────────────────────────────────────────────────────
+    st.divider()
+    st.subheader("Voided Checks")
+    st.caption("Required columns: **Payment Date · Payment Number · Payment Type · Payment Impact**")
+    voided_range = get_date_range("voided_checks", "payment_date", subsidiary)
+    if voided_range:
+        st.info(f"Data already uploaded: **{voided_range}**")
+    else:
+        st.info("No voided checks uploaded yet.")
+    voided_file = st.file_uploader("Choose CSV", type="csv", key="up_voided")
+
+    if voided_file:
+        try:
+            raw = pd.read_csv(voided_file)
+            required = ["Payment Date", "Payment Number", "Payment Type", "Payment Impact"]
+            missing = [c for c in required if c not in raw.columns]
+            if missing:
+                st.error(f"Missing columns: {', '.join(missing)}")
+            else:
+                filtered = raw[raw["Payment Type"].str.strip().str.lower() == "check"].copy()
+                filtered = filtered[filtered["Payment Number"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True) != "0"].copy()
+                filtered = filtered[["Payment Date", "Payment Number", "Payment Impact"]].rename(columns={
+                    "Payment Date": "payment_date",
+                    "Payment Number": "check_number",
+                    "Payment Impact": "amount",
+                })
+                filtered["amount"] = pd.to_numeric(filtered["amount"].astype(str).str.replace(r"[\$,]", "", regex=True), errors="coerce")
+                filtered = filtered.groupby(["check_number", "payment_date"], as_index=False)["amount"].sum()
+
+                st.info(f"{len(filtered):,} unique voided checks found")
+                st.dataframe(filtered.head(10), use_container_width=True)
+
+                if st.button("Add to Voided Checks Database", type="primary", key="btn_voided"):
+                    with st.spinner("Saving…"):
+                        result = upsert_voided_checks(filtered, subsidiary)
+                    st.success(f"{result['inserted']:,} rows added · {result['skipped']:,} duplicates skipped")
+        except Exception as exc:
+            st.error(f"Could not read file: {exc}")
+
 
 # ════════════════════════════════════════════════════════════════════════════
 # PAGE: RECONCILIATION & DASHBOARD
@@ -169,12 +210,13 @@ elif page == "Reconciliation & Dashboard":
         issued = get_issued_checks(subsidiary)
         cleared = get_cleared_checks(subsidiary)
         seed = get_seed_checks(subsidiary)
+        voided = get_voided_checks(subsidiary)
 
     if issued.empty and seed.empty:
         st.warning("No check data in the database yet. Go to **Upload Files** or **Seed Upload (Admin)** to get started.")
         st.stop()
 
-    results = reconcile(issued, cleared, seed)
+    results = reconcile(issued, cleared, seed, voided)
     stats = results["stats"]
     outstanding = results["outstanding"]
     disc = results["discrepancies"]
@@ -220,9 +262,10 @@ elif page == "Reconciliation & Dashboard":
     # ── Discrepancy tabs ─────────────────────────────────────────────────
     st.subheader("Discrepancy Dashboard")
 
-    tab1, tab2, tab3 = st.tabs([
+    tab1, tab2, tab3, tab4 = st.tabs([
         f"Amount Mismatches  ({stats['amount_mismatches']})",
         f"Unrecognized Cleared Checks  ({stats['ghost_checks']})",
+        f"Void Amount Mismatches  ({stats['void_mismatches']})",
         f"Long Outstanding 90+ Days  ({stats['long_outstanding_count']})",
     ])
 
@@ -271,6 +314,27 @@ elif page == "Reconciliation & Dashboard":
             st.dataframe(display, use_container_width=True, hide_index=True)
 
     with tab3:
+        vm = disc["void_mismatches"]
+        if vm.empty:
+            st.success("No void amount mismatches.")
+        else:
+            st.caption("These checks were found in the voided file but the void amount does not match the outstanding amount.")
+            display = vm[["check_number", "payment_date", "amount", "void_amount", "void_variance"]].copy()
+            display.columns = ["Check #", "Issue Date", "Outstanding Amt", "Void Amt", "Variance"]
+
+            def color_void_variance(val):
+                color = "#ffcccc" if val < 0 else "#fff3cc" if val > 0 else ""
+                return f"background-color: {color}"
+
+            st.dataframe(
+                display.style
+                    .map(color_void_variance, subset=["Variance"])
+                    .format({"Outstanding Amt": fmt_acct, "Void Amt": fmt_acct, "Variance": fmt_acct}),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+    with tab4:
         lo = disc["long_outstanding"]
         if lo.empty:
             st.success("No checks outstanding for 90+ days.")
