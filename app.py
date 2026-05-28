@@ -413,6 +413,20 @@ elif page == "Reconciliation & Dashboard":
 
     # ── Discrepancy tabs ─────────────────────────────────────────────────
     st.subheader("Discrepancy Dashboard")
+    st.caption("Select a next step for each item. Use the Notes column for custom explanations. Download per tab or all at once below.")
+
+    NEXT_STEPS = [
+        "",
+        "Reach out to CNB",
+        "CNB Labeled Incorrect Check # - Remove Incorrect Check # from OS Checks",
+        "Possible Fraud",
+        "Custom",
+    ]
+
+    _editor_cfg = {
+        "Next Steps": st.column_config.SelectboxColumn("Next Steps", options=NEXT_STEPS, required=False),
+        "Notes": st.column_config.TextColumn("Notes (required for Custom)"),
+    }
 
     tab1, tab2, tab3, tab4 = st.tabs([
         f"Amount Mismatches  ({stats['amount_mismatches']})",
@@ -420,6 +434,8 @@ elif page == "Reconciliation & Dashboard":
         f"Void Amount Mismatches  ({stats['void_mismatches']})",
         f"Long Outstanding 90+ Days  ({stats['long_outstanding_count']})",
     ])
+
+    edited_mm = edited_gc = edited_vm = edited_lo = pd.DataFrame()
 
     with tab1:
         mm = disc["amount_mismatches"]
@@ -431,27 +447,31 @@ elif page == "Reconciliation & Dashboard":
             display.columns = ["Check #", "Issue Date", "Issued Amt", "Cleared Amt", "Variance", "Cleared Date", "Status"]
             display["Issue Date"] = fmt_date(display["Issue Date"])
             display["Cleared Date"] = fmt_date(display["Cleared Date"])
+            variance_raw = display["Variance"].copy()
+            display["Issued Amt"] = display["Issued Amt"].map(fmt_acct)
+            display["Cleared Amt"] = display["Cleared Amt"].map(fmt_acct)
+            display["Variance"] = display["Variance"].map(fmt_acct)
+            display["Next Steps"] = ""
+            display["Notes"] = ""
 
-            def color_variance(val):
-                color = "#ffcccc" if val < 0 else "#fff3cc" if val > 0 else ""
-                return f"background-color: {color}"
-
-            st.dataframe(
-                display.style
-                    .map(color_variance, subset=["Variance"])
-                    .format({"Issued Amt": fmt_acct, "Cleared Amt": fmt_acct, "Variance": fmt_acct}),
-                use_container_width=True,
-                hide_index=True,
+            edited_mm = st.data_editor(
+                display,
+                column_config=_editor_cfg,
+                disabled=[c for c in display.columns if c not in ("Next Steps", "Notes")],
+                use_container_width=True, hide_index=True, key="editor_mm",
             )
 
+            buf = io.StringIO()
+            edited_mm.to_csv(buf, index=False)
+            st.download_button("Download Amount Mismatches", data=buf.getvalue(),
+                file_name=f"amount_mismatches_{subsidiary.replace(' ', '_')}_as_of_{as_of_date.strftime('%Y%m%d')}.csv",
+                mime="text/csv")
+
             fig = px.bar(
-                display,
-                x="Check #",
-                y="Variance",
+                pd.DataFrame({"Check #": display["Check #"], "Variance": variance_raw}),
+                x="Check #", y="Variance",
                 title="Variance per Check (Cleared Amount − Issued Amount)",
-                color="Variance",
-                color_continuous_scale="RdYlGn",
-                labels={"Variance": "$ Variance"},
+                color="Variance", color_continuous_scale="RdYlGn", labels={"Variance": "$ Variance"},
             )
             fig.add_hline(y=0, line_dash="dash", line_color="gray")
             st.plotly_chart(fig, use_container_width=True)
@@ -466,7 +486,21 @@ elif page == "Reconciliation & Dashboard":
             display.columns = ["Check #", "Cleared Date", "Amount", "Description", "Status"]
             display["Cleared Date"] = fmt_date(display["Cleared Date"])
             display["Amount"] = display["Amount"].map(fmt_acct)
-            st.dataframe(display, use_container_width=True, hide_index=True)
+            display["Next Steps"] = ""
+            display["Notes"] = ""
+
+            edited_gc = st.data_editor(
+                display,
+                column_config=_editor_cfg,
+                disabled=[c for c in display.columns if c not in ("Next Steps", "Notes")],
+                use_container_width=True, hide_index=True, key="editor_gc",
+            )
+
+            buf = io.StringIO()
+            edited_gc.to_csv(buf, index=False)
+            st.download_button("Download Unrecognized Cleared Checks", data=buf.getvalue(),
+                file_name=f"ghost_checks_{subsidiary.replace(' ', '_')}_as_of_{as_of_date.strftime('%Y%m%d')}.csv",
+                mime="text/csv")
 
     with tab3:
         vm = disc["void_mismatches"]
@@ -477,18 +511,24 @@ elif page == "Reconciliation & Dashboard":
             display = vm[["check_number", "payment_date", "amount", "void_amount", "void_variance"]].copy()
             display.columns = ["Check #", "Issue Date", "Outstanding Amt", "Void Amt", "Variance"]
             display["Issue Date"] = fmt_date(display["Issue Date"])
+            display["Outstanding Amt"] = display["Outstanding Amt"].map(fmt_acct)
+            display["Void Amt"] = display["Void Amt"].map(fmt_acct)
+            display["Variance"] = display["Variance"].map(fmt_acct)
+            display["Next Steps"] = ""
+            display["Notes"] = ""
 
-            def color_void_variance(val):
-                color = "#ffcccc" if val < 0 else "#fff3cc" if val > 0 else ""
-                return f"background-color: {color}"
-
-            st.dataframe(
-                display.style
-                    .map(color_void_variance, subset=["Variance"])
-                    .format({"Outstanding Amt": fmt_acct, "Void Amt": fmt_acct, "Variance": fmt_acct}),
-                use_container_width=True,
-                hide_index=True,
+            edited_vm = st.data_editor(
+                display,
+                column_config=_editor_cfg,
+                disabled=[c for c in display.columns if c not in ("Next Steps", "Notes")],
+                use_container_width=True, hide_index=True, key="editor_vm",
             )
+
+            buf = io.StringIO()
+            edited_vm.to_csv(buf, index=False)
+            st.download_button("Download Void Mismatches", data=buf.getvalue(),
+                file_name=f"void_mismatches_{subsidiary.replace(' ', '_')}_as_of_{as_of_date.strftime('%Y%m%d')}.csv",
+                mime="text/csv")
 
     with tab4:
         lo = disc["long_outstanding"]
@@ -504,16 +544,53 @@ elif page == "Reconciliation & Dashboard":
             display.columns = ["Check #", "Issue Date", "Amount", "Days Outstanding"]
             display["Issue Date"] = fmt_date(display["Issue Date"])
             display["Amount"] = display["Amount"].map(fmt_acct)
-            st.dataframe(display, use_container_width=True, hide_index=True)
+            display["Next Steps"] = ""
+            display["Notes"] = ""
+
+            edited_lo = st.data_editor(
+                display,
+                column_config=_editor_cfg,
+                disabled=[c for c in display.columns if c not in ("Next Steps", "Notes")],
+                use_container_width=True, hide_index=True, key="editor_lo",
+            )
+
+            buf = io.StringIO()
+            edited_lo.to_csv(buf, index=False)
+            st.download_button("Download Long Outstanding", data=buf.getvalue(),
+                file_name=f"long_outstanding_{subsidiary.replace(' ', '_')}_as_of_{as_of_date.strftime('%Y%m%d')}.csv",
+                mime="text/csv")
 
             fig = px.histogram(
-                lo,
-                x="days_outstanding",
-                nbins=20,
+                lo, x="days_outstanding", nbins=20,
                 title="Distribution of Days Outstanding (90+ day checks)",
                 labels={"days_outstanding": "Days Outstanding"},
             )
             st.plotly_chart(fig, use_container_width=True)
+
+    # ── Combined discrepancy download ─────────────────────────────────────
+    _all_discs = []
+    for _label, _df in [
+        ("Amount Mismatch", edited_mm),
+        ("Unrecognized Cleared Check", edited_gc),
+        ("Void Amount Mismatch", edited_vm),
+        ("Long Outstanding (90+ days)", edited_lo),
+    ]:
+        if not _df.empty:
+            _d = _df.copy()
+            _d.insert(0, "Discrepancy Type", _label)
+            _all_discs.append(_d)
+
+    if _all_discs:
+        _combined = pd.concat(_all_discs, ignore_index=True)
+        _buf = io.StringIO()
+        _combined.to_csv(_buf, index=False)
+        st.download_button(
+            "Download All Discrepancies with Annotations",
+            data=_buf.getvalue(),
+            file_name=f"all_discrepancies_{subsidiary.replace(' ', '_')}_as_of_{as_of_date.strftime('%Y%m%d')}.csv",
+            mime="text/csv",
+            type="primary",
+        )
 
     # ── ACH Reconciliation ───────────────────────────────────────────────
     st.divider()
