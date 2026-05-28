@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 from supabase import create_client, Client
 
+BATCH_SIZE = 500
+
 
 def _client() -> Client:
     return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
@@ -34,18 +36,42 @@ def _normalize_cleared(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def upsert_issued_checks(df: pd.DataFrame, subsidiary: str) -> dict:
+def _fetch_all(table: str, filters: dict) -> pd.DataFrame:
+    """Fetch all rows from a table using pagination to bypass the 1000-row default limit."""
     client = _client()
+    rows = []
+    start = 0
+
+    while True:
+        query = client.table(table).select("*")
+        for col, val in filters.items():
+            query = query.eq(col, val)
+        result = query.range(start, start + BATCH_SIZE - 1).execute()
+
+        if not result.data:
+            break
+        rows.extend(result.data)
+        if len(result.data) < BATCH_SIZE:
+            break
+        start += BATCH_SIZE
+
+    return pd.DataFrame(rows) if rows else pd.DataFrame()
+
+
+def _insert_batched(table: str, records: list) -> None:
+    """Insert records in batches to avoid request size limits."""
+    client = _client()
+    for i in range(0, len(records), BATCH_SIZE):
+        client.table(table).insert(records[i:i + BATCH_SIZE]).execute()
+
+
+def upsert_issued_checks(df: pd.DataFrame, subsidiary: str) -> dict:
     df = _normalize_issued(df)
     df["subsidiary"] = subsidiary
 
-    existing_raw = client.table("issued_checks") \
-        .select("payment_date,check_number,amount,subsidiary") \
-        .eq("subsidiary", subsidiary) \
-        .execute()
-
-    if existing_raw.data:
-        existing = _normalize_issued(pd.DataFrame(existing_raw.data))
+    existing_raw = _fetch_all("issued_checks", {"subsidiary": subsidiary})
+    if not existing_raw.empty:
+        existing = _normalize_issued(existing_raw)
         existing["subsidiary"] = subsidiary
         merged = df.merge(
             existing, on=["payment_date", "check_number", "amount", "subsidiary"],
@@ -58,22 +84,17 @@ def upsert_issued_checks(df: pd.DataFrame, subsidiary: str) -> dict:
     if new_rows.empty:
         return {"inserted": 0, "skipped": len(df)}
 
-    client.table("issued_checks").insert(new_rows.to_dict("records")).execute()
+    _insert_batched("issued_checks", new_rows.to_dict("records"))
     return {"inserted": len(new_rows), "skipped": len(df) - len(new_rows)}
 
 
 def upsert_cleared_checks(df: pd.DataFrame, subsidiary: str) -> dict:
-    client = _client()
     df = _normalize_cleared(df)
     df["subsidiary"] = subsidiary
 
-    existing_raw = client.table("cleared_checks") \
-        .select("date,check_number,amount,status,subsidiary") \
-        .eq("subsidiary", subsidiary) \
-        .execute()
-
-    if existing_raw.data:
-        existing = _normalize_cleared(pd.DataFrame(existing_raw.data))
+    existing_raw = _fetch_all("cleared_checks", {"subsidiary": subsidiary})
+    if not existing_raw.empty:
+        existing = _normalize_cleared(existing_raw)
         existing["subsidiary"] = subsidiary
         merged = df.merge(
             existing, on=["date", "check_number", "amount", "status", "subsidiary"],
@@ -86,15 +107,13 @@ def upsert_cleared_checks(df: pd.DataFrame, subsidiary: str) -> dict:
     if new_rows.empty:
         return {"inserted": 0, "skipped": len(df)}
 
-    client.table("cleared_checks").insert(new_rows.to_dict("records")).execute()
+    _insert_batched("cleared_checks", new_rows.to_dict("records"))
     return {"inserted": len(new_rows), "skipped": len(df) - len(new_rows)}
 
 
 def get_issued_checks(subsidiary: str) -> pd.DataFrame:
-    result = _client().table("issued_checks").select("*").eq("subsidiary", subsidiary).execute()
-    return pd.DataFrame(result.data) if result.data else pd.DataFrame()
+    return _fetch_all("issued_checks", {"subsidiary": subsidiary})
 
 
 def get_cleared_checks(subsidiary: str) -> pd.DataFrame:
-    result = _client().table("cleared_checks").select("*").eq("subsidiary", subsidiary).execute()
-    return pd.DataFrame(result.data) if result.data else pd.DataFrame()
+    return _fetch_all("cleared_checks", {"subsidiary": subsidiary})
