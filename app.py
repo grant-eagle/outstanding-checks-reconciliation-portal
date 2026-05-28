@@ -88,6 +88,7 @@ if page == "Upload Files":
                     st.error(f"Missing columns: {', '.join(missing)}")
                 else:
                     filtered = raw[raw["Payment Type"].str.strip().str.lower() == "check"].copy()
+                    filtered = filtered[filtered["Payment Number"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True) != "0"].copy()
                     filtered = filtered[["Payment Date", "Payment Number", "Payment Impact"]].rename(columns={
                         "Payment Date": "payment_date",
                         "Payment Number": "check_number",
