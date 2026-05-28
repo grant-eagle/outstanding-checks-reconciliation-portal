@@ -20,7 +20,7 @@ def _clean_amount(series: pd.Series) -> pd.Series:
 def _normalize_issued(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     out["payment_date"] = pd.to_datetime(out["payment_date"]).dt.strftime("%Y-%m-%d")
-    out["check_number"] = out["check_number"].astype(str).str.strip()
+    out["check_number"] = out["check_number"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
     out["amount"] = _clean_amount(out["amount"])
     return out
 
@@ -28,7 +28,7 @@ def _normalize_issued(df: pd.DataFrame) -> pd.DataFrame:
 def _normalize_cleared(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     out["date"] = pd.to_datetime(out["date"]).dt.strftime("%Y-%m-%d")
-    out["check_number"] = out["check_number"].astype(str).str.strip()
+    out["check_number"] = out["check_number"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
     out["amount"] = _clean_amount(out["amount"])
     out["status"] = out["status"].astype(str).str.strip()
     return out

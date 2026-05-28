@@ -5,12 +5,12 @@ def reconcile(issued: pd.DataFrame, cleared: pd.DataFrame) -> dict:
     issued = issued.copy()
     cleared = cleared.copy() if not cleared.empty else pd.DataFrame()
 
-    issued["check_number"] = issued["check_number"].astype(str).str.strip()
+    issued["check_number"] = issued["check_number"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
     issued["amount"] = issued["amount"].astype(float).round(2)
     issued["payment_date"] = pd.to_datetime(issued["payment_date"])
 
     if not cleared.empty:
-        cleared["check_number"] = cleared["check_number"].astype(str).str.strip()
+        cleared["check_number"] = cleared["check_number"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
         cleared["amount"] = cleared["amount"].astype(float).round(2)
         cleared["date"] = pd.to_datetime(cleared["date"])
 
