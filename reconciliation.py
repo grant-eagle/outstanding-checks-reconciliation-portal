@@ -97,6 +97,7 @@ def reconcile(
         "total_issued": len(issued),
         "total_cleared": len(cleared) if not cleared.empty else 0,
         "total_voided": len(voided) if not voided.empty else 0,
+        "voided_amount": voided["amount"].sum() if not voided.empty else 0.0,
         "total_outstanding": len(outstanding),
         "outstanding_amount": outstanding["amount"].sum(),
         "seed_amount": seed["amount"].sum() if not seed.empty else 0.0,

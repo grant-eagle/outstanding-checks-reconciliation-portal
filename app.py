@@ -243,12 +243,13 @@ elif page == "Reconciliation & Dashboard":
     disc = results["discrepancies"]
 
     # ── KPI row ──────────────────────────────────────────────────────────
-    k1, k2, k3, k4, k5 = st.columns(5)
+    k1, k2, k3, k4, k5, k6 = st.columns(6)
     k1.metric("Seed Checks (Historical)", f"{stats['total_seed']:,}", fmt_acct(stats['seed_amount']))
     k2.metric("Issued Checks", f"{stats['total_issued']:,}", fmt_acct(stats['issued_amount']))
     k3.metric("Cleared Checks", f"{stats['total_cleared']:,}", fmt_acct(stats['cleared_amount']))
-    k4.metric("Outstanding Checks", f"{stats['total_outstanding']:,}", fmt_acct(stats['outstanding_amount']))
-    k5.metric("Total Discrepancies", f"{stats['amount_mismatches'] + stats['ghost_checks']:,}", delta_color="inverse")
+    k4.metric("Voided Checks", f"{stats['total_voided']:,}", fmt_acct(stats['voided_amount']))
+    k5.metric("Outstanding Checks", f"{stats['total_outstanding']:,}", fmt_acct(stats['outstanding_amount']))
+    k6.metric("Total Discrepancies", f"{stats['amount_mismatches'] + stats['ghost_checks']:,}", delta_color="inverse")
 
     st.divider()
 
