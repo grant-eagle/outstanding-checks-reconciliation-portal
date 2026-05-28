@@ -16,7 +16,7 @@ CREATE POLICY "accounts_insert" ON subsidiary_accounts FOR INSERT TO anon WITH C
 
 -- Seed known account numbers
 INSERT INTO subsidiary_accounts (subsidiary, account_number) VALUES
-    ('CIC - FF',    '026830036'),
-    ('CAdmin - LF', '026833523'),
-    ('CHR - SF',    '026838851')
+    ('CIC - FF',    '26830036'),
+    ('CAdmin - LF', '26833523'),
+    ('CHR - SF',    '26838851')
 ON CONFLICT DO NOTHING;
