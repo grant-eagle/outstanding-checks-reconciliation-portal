@@ -24,6 +24,20 @@ from database import (
     clear_seed_checks,
     get_date_range,
 )
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_reconciliation_data(subsidiary: str):
+    issued = get_issued_checks(subsidiary)
+    cleared = get_cleared_checks(subsidiary)
+    seed = get_seed_checks(subsidiary)
+    voided = get_voided_checks(subsidiary)
+    return issued, cleared, seed, voided
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def cached_date_range(table: str, date_col: str, subsidiary: str):
+    return get_date_range(table, date_col, subsidiary)
 from reconciliation import reconcile
 
 st.set_page_config(
@@ -84,7 +98,7 @@ if page == "Upload Files":
     with col_issued:
         st.subheader("Issued Checks")
         st.caption("Required columns: **Payment Date · Payment Number · Payment Type · Payment Impact**")
-        issued_range = get_date_range("issued_checks", "payment_date", subsidiary)
+        issued_range = cached_date_range("issued_checks", "payment_date", subsidiary)
         if issued_range:
             st.info(f"Data already uploaded: **{issued_range}**")
         else:
@@ -123,7 +137,7 @@ if page == "Upload Files":
     with col_cleared:
         st.subheader("Cleared Checks (Bank)")
         st.caption("Required columns: **Post Date · Transaction Name - BAI · Customer Reference · Status · Amount**")
-        cleared_range = get_date_range("cleared_checks", "date", subsidiary)
+        cleared_range = cached_date_range("cleared_checks", "date", subsidiary)
         if cleared_range:
             st.info(f"Data already uploaded: **{cleared_range}**")
         else:
@@ -169,7 +183,7 @@ if page == "Upload Files":
     st.divider()
     st.subheader("Voided Checks")
     st.caption("Required columns: **Payment Date · Payment Number · Payment Type · Payment Impact**")
-    voided_range = get_date_range("voided_checks", "payment_date", subsidiary)
+    voided_range = cached_date_range("voided_checks", "payment_date", subsidiary)
     if voided_range:
         st.info(f"Data already uploaded: **{voided_range}**")
     else:
@@ -211,11 +225,13 @@ if page == "Upload Files":
 elif page == "Reconciliation & Dashboard":
     st.title(f"Reconciliation & Dashboard — {subsidiary}")
 
+    col_refresh, _ = st.columns([1, 5])
+    if col_refresh.button("Refresh Data"):
+        st.cache_data.clear()
+        st.rerun()
+
     with st.spinner("Loading data…"):
-        issued = get_issued_checks(subsidiary)
-        cleared = get_cleared_checks(subsidiary)
-        seed = get_seed_checks(subsidiary)
-        voided = get_voided_checks(subsidiary)
+        issued, cleared, seed, voided = load_reconciliation_data(subsidiary)
 
     if issued.empty and seed.empty:
         st.warning("No check data in the database yet. Go to **Upload Files** or **Seed Upload (Admin)** to get started.")
