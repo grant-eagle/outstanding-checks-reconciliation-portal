@@ -74,6 +74,7 @@ if page == "Upload Files":
         "Upload CSVs to append new records to each database. "
         "Rows that exactly match existing records are automatically skipped."
     )
+    st.info("**Note:** Historical check data from inception through 12/31/2025 is maintained in the seed database. Use the upload sections below for data from 1/1/2026 onwards.")
 
     col_issued, col_cleared = st.columns(2)
 
