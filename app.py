@@ -98,27 +98,28 @@ if page == "Upload Files":
     # ── Cleared Checks ───────────────────────────────────────────────────
     with col_cleared:
         st.subheader("Cleared Checks (Bank)")
-        st.caption("Required columns: **Date · Description · Serial Number · Status · Amount**")
+        st.caption("Required columns: **Post Date · Transaction Name - BAI · Customer Reference · Status · Amount**")
         cleared_file = st.file_uploader("Choose CSV", type="csv", key="up_cleared")
 
         if cleared_file:
             try:
                 raw = pd.read_csv(cleared_file)
-                required = ["Date", "Description", "Serial Number", "Status", "Amount"]
+                required = ["Post Date", "Transaction Name - BAI", "Customer Reference", "Status", "Amount"]
                 missing = [c for c in required if c not in raw.columns]
                 if missing:
                     st.error(f"Missing columns: {', '.join(missing)}")
                 else:
                     filtered = raw[
-                        raw["Description"].astype(str).str.strip().str.lower().str.contains("check", na=False)
+                        raw["Transaction Name - BAI"].astype(str).str.strip().str.lower().str.contains("check", na=False)
                     ].copy()
-                    filtered = filtered[["Date", "Description", "Serial Number", "Status", "Amount"]].rename(columns={
-                        "Date": "date",
-                        "Description": "description",
-                        "Serial Number": "check_number",
+                    filtered = filtered[["Post Date", "Transaction Name - BAI", "Customer Reference", "Status", "Amount"]].rename(columns={
+                        "Post Date": "date",
+                        "Transaction Name - BAI": "description",
+                        "Customer Reference": "check_number",
                         "Status": "status",
                         "Amount": "amount",
                     })
+                    filtered["amount"] = filtered["amount"].abs()
 
                     st.info(f"{len(filtered):,} check rows found ({len(raw) - len(filtered):,} non-check rows excluded)")
                     st.dataframe(filtered.head(10), use_container_width=True)
