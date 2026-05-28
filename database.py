@@ -72,13 +72,10 @@ def upsert_issued_checks(df: pd.DataFrame, subsidiary: str) -> dict:
 
     existing_raw = _fetch_all("issued_checks", {"subsidiary": subsidiary})
     if not existing_raw.empty:
-        existing = _normalize_issued(existing_raw)
-        existing["subsidiary"] = subsidiary
-        merged = df.merge(
-            existing, on=["payment_date", "check_number", "amount", "subsidiary"],
-            how="left", indicator=True
+        existing_numbers = set(
+            existing_raw["check_number"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
         )
-        new_rows = df[merged["_merge"] == "left_only"].reset_index(drop=True)
+        new_rows = df[~df["check_number"].isin(existing_numbers)].reset_index(drop=True)
     else:
         new_rows = df
 
@@ -95,13 +92,10 @@ def upsert_cleared_checks(df: pd.DataFrame, subsidiary: str) -> dict:
 
     existing_raw = _fetch_all("cleared_checks", {"subsidiary": subsidiary})
     if not existing_raw.empty:
-        existing = _normalize_cleared(existing_raw)
-        existing["subsidiary"] = subsidiary
-        merged = df.merge(
-            existing, on=["date", "check_number", "amount", "status", "subsidiary"],
-            how="left", indicator=True
+        existing_numbers = set(
+            existing_raw["check_number"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
         )
-        new_rows = df[merged["_merge"] == "left_only"].reset_index(drop=True)
+        new_rows = df[~df["check_number"].isin(existing_numbers)].reset_index(drop=True)
     else:
         new_rows = df
 
@@ -214,13 +208,10 @@ def upsert_voided_checks(df: pd.DataFrame, subsidiary: str) -> dict:
 
     existing_raw = _fetch_all("voided_checks", {"subsidiary": subsidiary})
     if not existing_raw.empty:
-        existing = _normalize_issued(existing_raw)
-        existing["subsidiary"] = subsidiary
-        merged = df.merge(
-            existing, on=["payment_date", "check_number", "amount", "subsidiary"],
-            how="left", indicator=True
+        existing_numbers = set(
+            existing_raw["check_number"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
         )
-        new_rows = df[merged["_merge"] == "left_only"].reset_index(drop=True)
+        new_rows = df[~df["check_number"].isin(existing_numbers)].reset_index(drop=True)
     else:
         new_rows = df
 
