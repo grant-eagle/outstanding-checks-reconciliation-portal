@@ -266,6 +266,7 @@ if page == "Upload Files":
                             .str.replace(r"^\((.+)\)$", r"-\1", regex=True)
                             .astype(float).abs()
                         )
+                        ach_bank_filtered = ach_bank_filtered.groupby("date", as_index=False)["amount"].sum()
 
                     st.info(
                         f"{len(filtered):,} check rows found ({len(raw) - len(filtered):,} non-check rows excluded)"

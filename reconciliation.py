@@ -24,6 +24,7 @@ def reconcile_ach(issued_ach: pd.DataFrame, cleared_ach: pd.DataFrame) -> dict:
     if not cleared.empty:
         cleared["date"] = pd.to_datetime(cleared["date"])
         cleared["amount"] = cleared["amount"].astype(float).round(2)
+        cleared = cleared.groupby("date", as_index=False)["amount"].sum()
 
     matched_rows = []
     outstanding_rows = []
