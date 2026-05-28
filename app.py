@@ -363,8 +363,14 @@ if page == "Upload Files":
                     )
                     filtered = filtered.groupby(["check_number", "payment_date"], as_index=False)["amount"].sum()
 
-                    # ACH: aggregate by payment date from same raw file
-                    ach_rows = raw[raw["Payment Type"].astype(str).str.strip().str.lower() == "ach"].copy()
+                    # ACH: same cycle filter as checks — only include approved cycles
+                    approved_cycles = set(allowed_cycles) | {
+                        c for c, d in cycle_decisions.items() if d == "Add to this subsidiary"
+                    }
+                    ach_rows = raw[
+                        (raw["Payment Type"].astype(str).str.strip().str.lower() == "ach") &
+                        (raw["Cycle Identifier"].astype(str).str.strip().isin(approved_cycles))
+                    ].copy()
                     ach_filtered = pd.DataFrame()
                     if not ach_rows.empty:
                         ach_filtered = ach_rows[["Payment Date", "Payment Impact"]].rename(columns={
