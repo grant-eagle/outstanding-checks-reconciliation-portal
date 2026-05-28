@@ -58,6 +58,11 @@ def cached_allowed_cycles(subsidiary: str) -> list:
 
 
 @st.cache_data(ttl=300, show_spinner=False)
+def cached_annotations(subsidiary: str):
+    return get_annotations(subsidiary)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
 def load_ach_data(subsidiary: str):
     return get_issued_ach(subsidiary), get_cleared_ach(subsidiary)
 
@@ -368,7 +373,7 @@ elif page == "Reconciliation & Dashboard":
     st.caption(f"Showing outstanding balance as of **{as_of_date.strftime('%B %d, %Y')}**")
 
     # Load saved annotations and build lookup keyed by (discrepancy_type, check_number)
-    _ann_raw = get_annotations(subsidiary)
+    _ann_raw = cached_annotations(subsidiary)
     _ann_lookup = {}
     if not _ann_raw.empty:
         for _, _ar in _ann_raw.iterrows():
@@ -601,7 +606,8 @@ elif page == "Reconciliation & Dashboard":
                     })
         with st.spinner("Saving…"):
             save_annotations(subsidiary, _save_rows)
-        st.success(f"Annotations saved for {len(_save_rows)} discrepancies.")
+        st.cache_data.clear()
+        st.rerun()
 
     if _all_discs:
         _combined = pd.concat(_all_discs, ignore_index=True)
