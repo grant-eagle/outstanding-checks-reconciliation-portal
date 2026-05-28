@@ -431,7 +431,7 @@ if page == "Upload Files":
                     # ACH: filter for PREAUTHORIZED DEBIT rows from same raw file
                     ach_bank_rows = raw[
                         raw["Transaction Detail"].astype(str).str.strip().str.contains(
-                            "PREAUTHORIZED DEBIT CURATIVETPALF", na=False
+                            "PREAUTHORIZED DEBIT CURATIVE", na=False
                         )
                     ].copy()
                     ach_bank_filtered = pd.DataFrame()
