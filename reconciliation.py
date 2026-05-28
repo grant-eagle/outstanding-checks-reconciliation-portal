@@ -15,7 +15,7 @@ def reconcile_ach(issued_ach: pd.DataFrame, cleared_ach: pd.DataFrame) -> dict:
             },
         }
 
-    issued = issued_ach.copy()
+    issued = issued_ach.copy().reset_index(drop=True)
     cleared = cleared_ach.copy() if not cleared_ach.empty else pd.DataFrame()
 
     issued["payment_date"] = pd.to_datetime(issued["payment_date"])
@@ -24,38 +24,117 @@ def reconcile_ach(issued_ach: pd.DataFrame, cleared_ach: pd.DataFrame) -> dict:
     if not cleared.empty:
         cleared["date"] = pd.to_datetime(cleared["date"])
         cleared["amount"] = cleared["amount"].astype(float).round(2)
-        cleared = cleared.groupby("date", as_index=False)["amount"].sum()
+        cleared = cleared.groupby("date", as_index=False)["amount"].sum().reset_index(drop=True)
 
     matched_rows = []
-    outstanding_rows = []
-    used_cleared_idx = set()
+    used_issued = set()
+    used_cleared = set()
 
-    for _, row in issued.iterrows():
-        issued_date = row["payment_date"]
-        issued_amount = row["amount"]
+    # ── Pass 1: 1-to-1 amount match within ±7 days ───────────────────────
+    for i, i_row in issued.iterrows():
+        if cleared.empty:
+            continue
+        candidates = cleared[
+            (~cleared.index.isin(used_cleared)) &
+            (abs((cleared["date"] - i_row["payment_date"]).dt.days) <= 7) &
+            (abs(cleared["amount"] - i_row["amount"]) <= 0.01)
+        ]
+        if not candidates.empty:
+            j = candidates.index[0]
+            c_row = cleared.loc[j]
+            matched_rows.append({
+                "payment_date": i_row["payment_date"],
+                "issued_amount": i_row["amount"],
+                "cleared_date": c_row["date"],
+                "cleared_amount": c_row["amount"],
+                "days_difference": int(abs((c_row["date"] - i_row["payment_date"]).days)),
+                "match_type": "1-to-1",
+            })
+            used_issued.add(i)
+            used_cleared.add(j)
 
-        if not cleared.empty:
-            candidates = cleared[
-                (~cleared.index.isin(used_cleared_idx)) &
-                (abs((cleared["date"] - issued_date).dt.days) <= 7) &
-                (abs(cleared["amount"] - issued_amount) <= 0.01)
+    # ── Pass 2: Multiple issued dates → one cleared total (±7 days) ───────
+    # Handles cases where subscriber + supplier cycles on the same issued date
+    # clear as one combined bank entry.
+    if not cleared.empty:
+        for j in [x for x in cleared.index if x not in used_cleared]:
+            c_row = cleared.loc[j]
+            c_date = c_row["date"]
+            c_amount = c_row["amount"]
+
+            candidates_i = [
+                i for i in issued.index
+                if i not in used_issued
+                and abs((issued.loc[i, "payment_date"] - c_date).days) <= 7
             ]
-            if not candidates.empty:
-                match = candidates.iloc[0]
-                used_cleared_idx.add(match.name)
-                matched_rows.append({
-                    "payment_date": issued_date,
-                    "issued_amount": issued_amount,
-                    "cleared_date": match["date"],
-                    "cleared_amount": match["amount"],
-                    "days_difference": int(abs((match["date"] - issued_date).days)),
-                })
+            if not candidates_i:
                 continue
 
-        outstanding_rows.append({"payment_date": issued_date, "amount": issued_amount})
+            candidate_sum = round(sum(issued.loc[i, "amount"] for i in candidates_i), 2)
+            if abs(candidate_sum - c_amount) <= 0.01:
+                for i in candidates_i:
+                    matched_rows.append({
+                        "payment_date": issued.loc[i, "payment_date"],
+                        "issued_amount": issued.loc[i, "amount"],
+                        "cleared_date": c_date,
+                        "cleared_amount": c_amount,
+                        "days_difference": int(abs((c_date - issued.loc[i, "payment_date"]).days)),
+                        "match_type": "n-to-1",
+                    })
+                    used_issued.add(i)
+                used_cleared.add(j)
 
+    # ── Pass 3: Cluster bank dates ±5 days apart → remaining issued ───────
+    # Handles cases where the bank splits a single issued batch across
+    # multiple clearing dates that fall within a 5-day window.
+    if not cleared.empty:
+        rem_cleared = (
+            cleared[~cleared.index.isin(used_cleared)]
+            .sort_values("date")
+            .copy()
+        )
+        if not rem_cleared.empty:
+            clusters = []
+            current_cluster = [rem_cleared.index[0]]
+            for k in range(1, len(rem_cleared)):
+                prev_date = cleared.loc[current_cluster[-1], "date"]
+                curr_date = rem_cleared.iloc[k]["date"]
+                if abs((curr_date - prev_date).days) <= 5:
+                    current_cluster.append(rem_cleared.index[k])
+                else:
+                    clusters.append(current_cluster)
+                    current_cluster = [rem_cleared.index[k]]
+            clusters.append(current_cluster)
+
+            for cluster in clusters:
+                cluster_sum = round(sum(cleared.loc[k, "amount"] for k in cluster), 2)
+                cluster_dates = [cleared.loc[k, "date"] for k in cluster]
+
+                for i in [x for x in issued.index if x not in used_issued]:
+                    i_row = issued.loc[i]
+                    in_window = any(abs((d - i_row["payment_date"]).days) <= 7 for d in cluster_dates)
+                    if abs(cluster_sum - i_row["amount"]) <= 0.01 and in_window:
+                        for k in cluster:
+                            c_row = cleared.loc[k]
+                            matched_rows.append({
+                                "payment_date": i_row["payment_date"],
+                                "issued_amount": i_row["amount"],
+                                "cleared_date": c_row["date"],
+                                "cleared_amount": c_row["amount"],
+                                "days_difference": int(abs((c_row["date"] - i_row["payment_date"]).days)),
+                                "match_type": "cluster",
+                            })
+                        used_issued.add(i)
+                        for k in cluster:
+                            used_cleared.add(k)
+                        break
+
+    outstanding_rows = [
+        {"payment_date": issued.loc[i, "payment_date"], "amount": issued.loc[i, "amount"]}
+        for i in issued.index if i not in used_issued
+    ]
     unmatched_cleared = (
-        cleared[~cleared.index.isin(used_cleared_idx)].copy()
+        cleared[~cleared.index.isin(used_cleared)].copy()
         if not cleared.empty else pd.DataFrame()
     )
 
@@ -65,7 +144,7 @@ def reconcile_ach(issued_ach: pd.DataFrame, cleared_ach: pd.DataFrame) -> dict:
     stats = {
         "total_issued_ach": len(issued),
         "total_cleared_ach": len(cleared) if not cleared.empty else 0,
-        "total_matched_ach": len(matched),
+        "total_matched_ach": len(used_issued),
         "total_outstanding_ach": len(outstanding),
         "issued_ach_amount": issued["amount"].sum(),
         "outstanding_ach_amount": outstanding["amount"].sum() if not outstanding.empty else 0.0,

@@ -538,7 +538,7 @@ elif page == "Reconciliation & Dashboard":
                 st.info("No matched ACH batches yet.")
             else:
                 display = ach["matched"].copy()
-                display.columns = ["Payment Date", "Issued Amount", "Cleared Date", "Cleared Amount", "Days Difference"]
+                display.columns = ["Payment Date", "Issued Amount", "Cleared Date", "Cleared Amount", "Days Difference", "Match Type"]
                 display["Issued Amount"] = display["Issued Amount"].map(fmt_acct)
                 display["Cleared Amount"] = display["Cleared Amount"].map(fmt_acct)
                 st.dataframe(display, use_container_width=True, hide_index=True)
