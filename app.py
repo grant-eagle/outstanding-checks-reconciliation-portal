@@ -23,6 +23,8 @@ from database import (
     load_seed_checks,
     clear_seed_checks,
     get_date_range,
+    get_allowed_cycles,
+    add_allowed_cycle,
 )
 
 
@@ -38,6 +40,11 @@ def load_reconciliation_data(subsidiary: str):
 @st.cache_data(ttl=300, show_spinner=False)
 def cached_date_range(table: str, date_col: str, subsidiary: str):
     return get_date_range(table, date_col, subsidiary)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def cached_allowed_cycles(subsidiary: str) -> list:
+    return get_allowed_cycles(subsidiary)
 from reconciliation import reconcile
 
 st.set_page_config(
@@ -108,25 +115,69 @@ if page == "Upload Files":
         if issued_file:
             try:
                 raw = pd.read_csv(issued_file)
-                required = ["Payment Date", "Payment Number", "Payment Type", "Payment Impact"]
+                required = ["Payment Date", "Payment Number", "Payment Type", "Payment Impact", "Cycle Identifier"]
                 missing = [c for c in required if c not in raw.columns]
                 if missing:
                     st.error(f"Missing columns: {', '.join(missing)}")
                 else:
-                    filtered = raw[raw["Payment Type"].str.strip().str.lower() == "check"].copy()
-                    filtered = filtered[filtered["Payment Number"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True) != "0"].copy()
-                    filtered = filtered[["Payment Date", "Payment Number", "Payment Impact"]].rename(columns={
+                    # Filter checks and non-zero payment numbers
+                    pre_validate = raw[raw["Payment Type"].str.strip().str.lower() == "check"].copy()
+                    pre_validate = pre_validate[
+                        pre_validate["Payment Number"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True) != "0"
+                    ].copy()
+
+                    # Validate Cycle Identifiers
+                    allowed_cycles = cached_allowed_cycles(subsidiary)
+                    upload_cycles = pre_validate["Cycle Identifier"].astype(str).str.strip().unique().tolist()
+                    unknown_cycles = [c for c in upload_cycles if c not in allowed_cycles]
+
+                    cycle_decisions = {}
+                    if unknown_cycles:
+                        st.warning(f"{len(unknown_cycles)} unrecognized Payment Cycle(s) found in this file.")
+                        for cycle in sorted(unknown_cycles):
+                            count = len(pre_validate[pre_validate["Cycle Identifier"].astype(str).str.strip() == cycle])
+                            st.markdown(f"**{cycle}** — {count:,} rows")
+                            st.caption(
+                                f'Is **"{cycle}"** a new Payment Cycle for **{subsidiary}**? '
+                                f'Or should it be removed from this upload?'
+                            )
+                            decision = st.radio(
+                                "",
+                                ["Add to this subsidiary", "Remove from upload"],
+                                key=f"cycle_decision_{cycle}",
+                                horizontal=True,
+                            )
+                            cycle_decisions[cycle] = decision
+                        st.divider()
+
+                    # Apply "remove" decisions
+                    working = pre_validate.copy()
+                    for cycle, decision in cycle_decisions.items():
+                        if decision == "Remove from upload":
+                            working = working[working["Cycle Identifier"].astype(str).str.strip() != cycle]
+
+                    # Aggregate and prepare for upload
+                    filtered = working[["Payment Date", "Payment Number", "Payment Impact"]].rename(columns={
                         "Payment Date": "payment_date",
                         "Payment Number": "check_number",
                         "Payment Impact": "amount",
                     })
-                    filtered["amount"] = pd.to_numeric(filtered["amount"].astype(str).str.replace(r"[\$,]", "", regex=True), errors="coerce")
+                    filtered["amount"] = pd.to_numeric(
+                        filtered["amount"].astype(str).str.replace(r"[\$,]", "", regex=True), errors="coerce"
+                    )
                     filtered = filtered.groupby(["check_number", "payment_date"], as_index=False)["amount"].sum()
 
-                    st.info(f"{len(filtered):,} unique checks found ({len(raw) - len(filtered):,} rows aggregated/excluded)")
+                    st.info(f"{len(filtered):,} unique checks ready to upload")
                     st.dataframe(filtered.head(10), use_container_width=True)
 
                     if st.button("Add to Issued Checks Database", type="primary", key="btn_issued"):
+                        # Persist any new cycles the user approved
+                        for cycle, decision in cycle_decisions.items():
+                            if decision == "Add to this subsidiary":
+                                add_allowed_cycle(subsidiary, cycle)
+                        if cycle_decisions:
+                            st.cache_data.clear()
+
                         with st.spinner("Saving…"):
                             result = upsert_issued_checks(filtered, subsidiary)
                         st.success(f"{result['inserted']:,} rows added · {result['skipped']:,} duplicates skipped")

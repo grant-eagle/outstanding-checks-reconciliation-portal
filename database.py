@@ -112,6 +112,21 @@ def upsert_cleared_checks(df: pd.DataFrame, subsidiary: str) -> dict:
     return {"inserted": len(new_rows), "skipped": len(df) - len(new_rows)}
 
 
+def get_allowed_cycles(subsidiary: str) -> list:
+    result = _client().table("subsidiary_cycles").select("cycle_identifier").eq("subsidiary", subsidiary).execute()
+    return [r["cycle_identifier"] for r in result.data] if result.data else []
+
+
+def add_allowed_cycle(subsidiary: str, cycle_identifier: str) -> None:
+    try:
+        _client().table("subsidiary_cycles").insert({
+            "subsidiary": subsidiary,
+            "cycle_identifier": cycle_identifier,
+        }).execute()
+    except Exception:
+        pass  # Already exists — unique constraint
+
+
 def get_date_range(table: str, date_col: str, subsidiary: str) -> str:
     """Return a human-readable date range string for already-uploaded data."""
     try:
