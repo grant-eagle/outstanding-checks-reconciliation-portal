@@ -148,7 +148,12 @@ if page == "Upload Files":
                         "Status": "status",
                         "Amount": "amount",
                     })
-                    filtered["amount"] = filtered["amount"].abs()
+                    filtered["amount"] = (
+                        filtered["amount"].astype(str).str.strip()
+                        .str.replace(r"[\$,\s]", "", regex=True)
+                        .str.replace(r"^\((.+)\)$", r"-\1", regex=True)
+                        .astype(float).abs()
+                    )
 
                     st.info(f"{len(filtered):,} check rows found ({len(raw) - len(filtered):,} non-check rows excluded)")
                     st.dataframe(filtered.head(10), use_container_width=True)

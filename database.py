@@ -12,8 +12,9 @@ def _client() -> Client:
 def _clean_amount(series: pd.Series) -> pd.Series:
     return (
         series.astype(str)
-        .str.replace(r"[\$,]", "", regex=True)
         .str.strip()
+        .str.replace(r"[\$,\s]", "", regex=True)
+        .str.replace(r"^\((.+)\)$", r"-\1", regex=True)  # $(189.07) → -189.07
         .astype(float)
         .round(2)
     )
