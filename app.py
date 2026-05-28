@@ -12,6 +12,10 @@ def fmt_acct(val: float) -> str:
     return f"${val:,.2f}"
 
 
+def fmt_date(series: pd.Series) -> pd.Series:
+    return pd.to_datetime(series).dt.strftime("%m/%d/%Y")
+
+
 from database import (
     upsert_issued_checks,
     upsert_cleared_checks,
@@ -390,6 +394,7 @@ elif page == "Reconciliation & Dashboard":
             .copy()
         )
         display.columns = ["Check Number", "Payment Date", "Amount", "Days Outstanding"]
+        display["Payment Date"] = fmt_date(display["Payment Date"])
         display["Amount"] = display["Amount"].map(fmt_acct)
 
         st.dataframe(display, use_container_width=True, hide_index=True)
@@ -424,6 +429,8 @@ elif page == "Reconciliation & Dashboard":
             st.caption("These checks were found in both databases but the amounts do not match.")
             display = mm[["check_number", "payment_date", "amount", "cleared_amount", "variance", "cleared_date", "cleared_status"]].copy()
             display.columns = ["Check #", "Issue Date", "Issued Amt", "Cleared Amt", "Variance", "Cleared Date", "Status"]
+            display["Issue Date"] = fmt_date(display["Issue Date"])
+            display["Cleared Date"] = fmt_date(display["Cleared Date"])
 
             def color_variance(val):
                 color = "#ffcccc" if val < 0 else "#fff3cc" if val > 0 else ""
@@ -457,6 +464,7 @@ elif page == "Reconciliation & Dashboard":
             st.caption("These checks appear in the bank data but have no matching issued check.")
             display = gc[["check_number", "date", "amount", "description", "status"]].copy()
             display.columns = ["Check #", "Cleared Date", "Amount", "Description", "Status"]
+            display["Cleared Date"] = fmt_date(display["Cleared Date"])
             display["Amount"] = display["Amount"].map(fmt_acct)
             st.dataframe(display, use_container_width=True, hide_index=True)
 
@@ -468,6 +476,7 @@ elif page == "Reconciliation & Dashboard":
             st.caption("These checks were found in the voided file but the void amount does not match the outstanding amount.")
             display = vm[["check_number", "payment_date", "amount", "void_amount", "void_variance"]].copy()
             display.columns = ["Check #", "Issue Date", "Outstanding Amt", "Void Amt", "Variance"]
+            display["Issue Date"] = fmt_date(display["Issue Date"])
 
             def color_void_variance(val):
                 color = "#ffcccc" if val < 0 else "#fff3cc" if val > 0 else ""
@@ -493,6 +502,7 @@ elif page == "Reconciliation & Dashboard":
                 .copy()
             )
             display.columns = ["Check #", "Issue Date", "Amount", "Days Outstanding"]
+            display["Issue Date"] = fmt_date(display["Issue Date"])
             display["Amount"] = display["Amount"].map(fmt_acct)
             st.dataframe(display, use_container_width=True, hide_index=True)
 
@@ -544,6 +554,7 @@ elif page == "Reconciliation & Dashboard":
             else:
                 display = ach["outstanding"].copy()
                 display.columns = ["Payment Date", "Amount"]
+                display["Payment Date"] = fmt_date(display["Payment Date"])
                 display["Amount"] = display["Amount"].map(fmt_acct)
                 st.dataframe(display, use_container_width=True, hide_index=True)
 
@@ -562,6 +573,8 @@ elif page == "Reconciliation & Dashboard":
             else:
                 display = ach["matched"].copy()
                 display.columns = ["Payment Date", "Issued Amount", "Cleared Date", "Cleared Amount", "Days Difference", "Match Type"]
+                display["Payment Date"] = fmt_date(display["Payment Date"])
+                display["Cleared Date"] = fmt_date(display["Cleared Date"])
                 display["Issued Amount"] = display["Issued Amount"].map(fmt_acct)
                 display["Cleared Amount"] = display["Cleared Amount"].map(fmt_acct)
                 st.dataframe(display, use_container_width=True, hide_index=True)
@@ -573,6 +586,7 @@ elif page == "Reconciliation & Dashboard":
                 st.caption("Bank ACH clearings with no matching issued ACH batch within ±7 days.")
                 display = ach["unmatched_cleared"][["date", "amount"]].copy()
                 display.columns = ["Cleared Date", "Amount"]
+                display["Cleared Date"] = fmt_date(display["Cleared Date"])
                 display["Amount"] = display["Amount"].map(fmt_acct)
                 st.dataframe(display, use_container_width=True, hide_index=True)
 
@@ -603,7 +617,7 @@ elif page == "Seed Upload (Admin)":
         st.dataframe(
             existing_seed[["check_number", "payment_date", "amount"]]
             .rename(columns={"check_number": "Check #", "payment_date": "Payment Date", "amount": "Amount"})
-            .assign(Amount=lambda d: d["Amount"].map(fmt_acct)),
+            .assign(**{"Payment Date": lambda d: fmt_date(d["Payment Date"]), "Amount": lambda d: d["Amount"].map(fmt_acct)}),
             use_container_width=True,
             hide_index=True,
         )
