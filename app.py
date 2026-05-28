@@ -211,7 +211,7 @@ elif page == "Reconciliation & Dashboard":
                 return f"background-color: {color}"
 
             st.dataframe(
-                display.style.applymap(color_variance, subset=["Variance"]),
+                display.style.map(color_variance, subset=["Variance"]),
                 use_container_width=True,
                 hide_index=True,
             )
