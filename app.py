@@ -33,6 +33,8 @@ from database import (
     get_date_range,
     get_allowed_cycles,
     add_allowed_cycle,
+    get_annotations,
+    save_annotations,
 )
 from reconciliation import reconcile, reconcile_ach
 
@@ -366,6 +368,25 @@ elif page == "Reconciliation & Dashboard":
 
     st.caption(f"Showing outstanding balance as of **{as_of_date.strftime('%B %d, %Y')}**")
 
+    # Load saved annotations and build lookup keyed by (discrepancy_type, check_number)
+    _ann_raw = get_annotations(subsidiary)
+    _ann_lookup = {}
+    if not _ann_raw.empty:
+        for _, _ar in _ann_raw.iterrows():
+            _ann_lookup[(_ar["discrepancy_type"], str(_ar["check_number"]).strip())] = {
+                "next_steps": _ar.get("next_steps", "") or "",
+                "notes": _ar.get("notes", "") or "",
+            }
+
+    def _apply_ann(df: pd.DataFrame, disc_type: str) -> pd.DataFrame:
+        df["Next Steps"] = df["Check #"].astype(str).map(
+            lambda cn: _ann_lookup.get((disc_type, cn.strip()), {}).get("next_steps", "")
+        )
+        df["Notes"] = df["Check #"].astype(str).map(
+            lambda cn: _ann_lookup.get((disc_type, cn.strip()), {}).get("notes", "")
+        )
+        return df
+
     results = reconcile(issued, cleared, seed, voided)
     stats = results["stats"]
     outstanding = results["outstanding"]
@@ -452,14 +473,13 @@ elif page == "Reconciliation & Dashboard":
             display["Issued Amt"] = display["Issued Amt"].map(fmt_acct)
             display["Cleared Amt"] = display["Cleared Amt"].map(fmt_acct)
             display["Variance"] = display["Variance"].map(fmt_acct)
-            display["Next Steps"] = ""
-            display["Notes"] = ""
+            _apply_ann(display, "amount_mismatch")
 
             edited_mm = st.data_editor(
                 display,
                 column_config=_editor_cfg,
                 disabled=[c for c in display.columns if c not in ("Next Steps", "Notes")],
-                use_container_width=True, hide_index=True, key="editor_mm",
+                use_container_width=True, hide_index=True, key=f"editor_mm_{subsidiary}",
             )
 
             buf = io.StringIO()
@@ -487,14 +507,13 @@ elif page == "Reconciliation & Dashboard":
             display.columns = ["Check #", "Cleared Date", "Amount", "Description", "Status"]
             display["Cleared Date"] = fmt_date(display["Cleared Date"])
             display["Amount"] = display["Amount"].map(fmt_acct)
-            display["Next Steps"] = ""
-            display["Notes"] = ""
+            _apply_ann(display, "ghost_check")
 
             edited_gc = st.data_editor(
                 display,
                 column_config=_editor_cfg,
                 disabled=[c for c in display.columns if c not in ("Next Steps", "Notes")],
-                use_container_width=True, hide_index=True, key="editor_gc",
+                use_container_width=True, hide_index=True, key=f"editor_gc_{subsidiary}",
             )
 
             buf = io.StringIO()
@@ -515,14 +534,13 @@ elif page == "Reconciliation & Dashboard":
             display["Outstanding Amt"] = display["Outstanding Amt"].map(fmt_acct)
             display["Void Amt"] = display["Void Amt"].map(fmt_acct)
             display["Variance"] = display["Variance"].map(fmt_acct)
-            display["Next Steps"] = ""
-            display["Notes"] = ""
+            _apply_ann(display, "void_mismatch")
 
             edited_vm = st.data_editor(
                 display,
                 column_config=_editor_cfg,
                 disabled=[c for c in display.columns if c not in ("Next Steps", "Notes")],
-                use_container_width=True, hide_index=True, key="editor_vm",
+                use_container_width=True, hide_index=True, key=f"editor_vm_{subsidiary}",
             )
 
             buf = io.StringIO()
@@ -545,14 +563,13 @@ elif page == "Reconciliation & Dashboard":
             display.columns = ["Check #", "Issue Date", "Amount", "Days Outstanding"]
             display["Issue Date"] = fmt_date(display["Issue Date"])
             display["Amount"] = display["Amount"].map(fmt_acct)
-            display["Next Steps"] = ""
-            display["Notes"] = ""
+            _apply_ann(display, "long_outstanding")
 
             edited_lo = st.data_editor(
                 display,
                 column_config=_editor_cfg,
                 disabled=[c for c in display.columns if c not in ("Next Steps", "Notes")],
-                use_container_width=True, hide_index=True, key="editor_lo",
+                use_container_width=True, hide_index=True, key=f"editor_lo_{subsidiary}",
             )
 
             buf = io.StringIO()
@@ -581,16 +598,37 @@ elif page == "Reconciliation & Dashboard":
             _d.insert(0, "Discrepancy Type", _label)
             _all_discs.append(_d)
 
+    # ── Save annotations to database ─────────────────────────────────────
+    _save_col, _dl_col = st.columns([1, 2])
+    if _save_col.button("Save Annotations", type="primary"):
+        _save_rows = []
+        for _disc_type, _edited in [
+            ("amount_mismatch", edited_mm),
+            ("ghost_check", edited_gc),
+            ("void_mismatch", edited_vm),
+            ("long_outstanding", edited_lo),
+        ]:
+            if not _edited.empty:
+                for _, _er in _edited.iterrows():
+                    _save_rows.append({
+                        "discrepancy_type": _disc_type,
+                        "check_number": str(_er["Check #"]),
+                        "next_steps": _er.get("Next Steps", "") or "",
+                        "notes": _er.get("Notes", "") or "",
+                    })
+        with st.spinner("Saving…"):
+            save_annotations(subsidiary, _save_rows)
+        st.success(f"Annotations saved for {len(_save_rows)} discrepancies.")
+
     if _all_discs:
         _combined = pd.concat(_all_discs, ignore_index=True)
         _buf = io.StringIO()
         _combined.to_csv(_buf, index=False)
-        st.download_button(
+        _dl_col.download_button(
             "Download All Discrepancies with Annotations",
             data=_buf.getvalue(),
             file_name=f"all_discrepancies_{subsidiary.replace(' ', '_')}_as_of_{as_of_date.strftime('%Y%m%d')}.csv",
             mime="text/csv",
-            type="primary",
         )
 
     # ── ACH Reconciliation ───────────────────────────────────────────────

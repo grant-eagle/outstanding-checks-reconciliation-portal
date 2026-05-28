@@ -239,3 +239,31 @@ def load_seed_checks(df: pd.DataFrame, subsidiary: str) -> dict:
     df["subsidiary"] = subsidiary
     _insert_batched("seed_checks", df.to_dict("records"))
     return {"inserted": len(df)}
+
+
+def get_annotations(subsidiary: str) -> pd.DataFrame:
+    return _fetch_all("discrepancy_annotations", {"subsidiary": subsidiary})
+
+
+def save_annotations(subsidiary: str, rows: list) -> None:
+    """Upsert discrepancy annotations. Each row must have discrepancy_type, check_number, next_steps, notes."""
+    if not rows:
+        return
+    now = pd.Timestamp.utcnow().isoformat()
+    records = [
+        {
+            "subsidiary": subsidiary,
+            "discrepancy_type": r["discrepancy_type"],
+            "check_number": str(r["check_number"]).strip(),
+            "next_steps": r.get("next_steps", "") or "",
+            "notes": r.get("notes", "") or "",
+            "updated_at": now,
+        }
+        for r in rows
+    ]
+    client = _client()
+    for i in range(0, len(records), BATCH_SIZE):
+        client.table("discrepancy_annotations").upsert(
+            records[i:i + BATCH_SIZE],
+            on_conflict="subsidiary,discrepancy_type,check_number",
+        ).execute()
