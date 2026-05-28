@@ -1,6 +1,84 @@
 import pandas as pd
 
 
+def reconcile_ach(issued_ach: pd.DataFrame, cleared_ach: pd.DataFrame) -> dict:
+    if issued_ach.empty:
+        return {
+            "matched": pd.DataFrame(),
+            "outstanding": pd.DataFrame(),
+            "unmatched_cleared": cleared_ach,
+            "stats": {
+                "total_issued_ach": 0, "total_cleared_ach": 0,
+                "total_matched_ach": 0, "total_outstanding_ach": 0,
+                "issued_ach_amount": 0.0, "outstanding_ach_amount": 0.0,
+                "unmatched_cleared_count": len(cleared_ach) if not cleared_ach.empty else 0,
+            },
+        }
+
+    issued = issued_ach.copy()
+    cleared = cleared_ach.copy() if not cleared_ach.empty else pd.DataFrame()
+
+    issued["payment_date"] = pd.to_datetime(issued["payment_date"])
+    issued["amount"] = issued["amount"].astype(float).round(2)
+
+    if not cleared.empty:
+        cleared["date"] = pd.to_datetime(cleared["date"])
+        cleared["amount"] = cleared["amount"].astype(float).round(2)
+
+    matched_rows = []
+    outstanding_rows = []
+    used_cleared_idx = set()
+
+    for _, row in issued.iterrows():
+        issued_date = row["payment_date"]
+        issued_amount = row["amount"]
+
+        if not cleared.empty:
+            candidates = cleared[
+                (~cleared.index.isin(used_cleared_idx)) &
+                (abs((cleared["date"] - issued_date).dt.days) <= 7) &
+                (abs(cleared["amount"] - issued_amount) <= 0.01)
+            ]
+            if not candidates.empty:
+                match = candidates.iloc[0]
+                used_cleared_idx.add(match.name)
+                matched_rows.append({
+                    "payment_date": issued_date,
+                    "issued_amount": issued_amount,
+                    "cleared_date": match["date"],
+                    "cleared_amount": match["amount"],
+                    "days_difference": int(abs((match["date"] - issued_date).days)),
+                })
+                continue
+
+        outstanding_rows.append({"payment_date": issued_date, "amount": issued_amount})
+
+    unmatched_cleared = (
+        cleared[~cleared.index.isin(used_cleared_idx)].copy()
+        if not cleared.empty else pd.DataFrame()
+    )
+
+    matched = pd.DataFrame(matched_rows)
+    outstanding = pd.DataFrame(outstanding_rows)
+
+    stats = {
+        "total_issued_ach": len(issued),
+        "total_cleared_ach": len(cleared) if not cleared.empty else 0,
+        "total_matched_ach": len(matched),
+        "total_outstanding_ach": len(outstanding),
+        "issued_ach_amount": issued["amount"].sum(),
+        "outstanding_ach_amount": outstanding["amount"].sum() if not outstanding.empty else 0.0,
+        "unmatched_cleared_count": len(unmatched_cleared),
+    }
+
+    return {
+        "matched": matched,
+        "outstanding": outstanding,
+        "unmatched_cleared": unmatched_cleared,
+        "stats": stats,
+    }
+
+
 def reconcile(
     issued: pd.DataFrame,
     cleared: pd.DataFrame,

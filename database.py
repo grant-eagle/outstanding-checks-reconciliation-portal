@@ -112,6 +112,60 @@ def upsert_cleared_checks(df: pd.DataFrame, subsidiary: str) -> dict:
     return {"inserted": len(new_rows), "skipped": len(df) - len(new_rows)}
 
 
+def get_issued_ach(subsidiary: str) -> pd.DataFrame:
+    return _fetch_all("issued_ach", {"subsidiary": subsidiary})
+
+
+def get_cleared_ach(subsidiary: str) -> pd.DataFrame:
+    return _fetch_all("cleared_ach", {"subsidiary": subsidiary})
+
+
+def upsert_issued_ach(df: pd.DataFrame, subsidiary: str) -> dict:
+    df = df.copy().reset_index(drop=True)
+    df["payment_date"] = pd.to_datetime(df["payment_date"]).dt.strftime("%Y-%m-%d")
+    df["amount"] = _clean_amount(df["amount"])
+    df["subsidiary"] = subsidiary
+
+    existing_raw = _fetch_all("issued_ach", {"subsidiary": subsidiary})
+    if not existing_raw.empty:
+        existing = existing_raw.copy()
+        existing["payment_date"] = pd.to_datetime(existing["payment_date"]).dt.strftime("%Y-%m-%d")
+        existing["amount"] = existing["amount"].astype(float).round(2)
+        existing["subsidiary"] = subsidiary
+        merged = df.merge(existing, on=["payment_date", "amount", "subsidiary"], how="left", indicator=True)
+        new_rows = df[merged["_merge"] == "left_only"].reset_index(drop=True)
+    else:
+        new_rows = df
+
+    if new_rows.empty:
+        return {"inserted": 0, "skipped": len(df)}
+    _insert_batched("issued_ach", new_rows.to_dict("records"))
+    return {"inserted": len(new_rows), "skipped": len(df) - len(new_rows)}
+
+
+def upsert_cleared_ach(df: pd.DataFrame, subsidiary: str) -> dict:
+    df = df.copy().reset_index(drop=True)
+    df["date"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
+    df["amount"] = _clean_amount(df["amount"])
+    df["subsidiary"] = subsidiary
+
+    existing_raw = _fetch_all("cleared_ach", {"subsidiary": subsidiary})
+    if not existing_raw.empty:
+        existing = existing_raw.copy()
+        existing["date"] = pd.to_datetime(existing["date"]).dt.strftime("%Y-%m-%d")
+        existing["amount"] = existing["amount"].astype(float).round(2)
+        existing["subsidiary"] = subsidiary
+        merged = df.merge(existing, on=["date", "amount", "subsidiary"], how="left", indicator=True)
+        new_rows = df[merged["_merge"] == "left_only"].reset_index(drop=True)
+    else:
+        new_rows = df
+
+    if new_rows.empty:
+        return {"inserted": 0, "skipped": len(df)}
+    _insert_batched("cleared_ach", new_rows.to_dict("records"))
+    return {"inserted": len(new_rows), "skipped": len(df) - len(new_rows)}
+
+
 def get_allowed_cycles(subsidiary: str) -> list:
     result = _client().table("subsidiary_cycles").select("cycle_identifier").eq("subsidiary", subsidiary).execute()
     return [r["cycle_identifier"] for r in result.data] if result.data else []

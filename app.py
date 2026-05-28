@@ -16,16 +16,21 @@ from database import (
     upsert_issued_checks,
     upsert_cleared_checks,
     upsert_voided_checks,
+    upsert_issued_ach,
+    upsert_cleared_ach,
     get_issued_checks,
     get_cleared_checks,
     get_voided_checks,
     get_seed_checks,
+    get_issued_ach,
+    get_cleared_ach,
     load_seed_checks,
     clear_seed_checks,
     get_date_range,
     get_allowed_cycles,
     add_allowed_cycle,
 )
+from reconciliation import reconcile, reconcile_ach
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -45,7 +50,11 @@ def cached_date_range(table: str, date_col: str, subsidiary: str):
 @st.cache_data(ttl=300, show_spinner=False)
 def cached_allowed_cycles(subsidiary: str) -> list:
     return get_allowed_cycles(subsidiary)
-from reconciliation import reconcile
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_ach_data(subsidiary: str):
+    return get_issued_ach(subsidiary), get_cleared_ach(subsidiary)
 
 st.set_page_config(
     page_title="Check Reconciliation Portal",
@@ -167,11 +176,26 @@ if page == "Upload Files":
                     )
                     filtered = filtered.groupby(["check_number", "payment_date"], as_index=False)["amount"].sum()
 
-                    st.info(f"{len(filtered):,} unique checks ready to upload")
+                    # ACH: aggregate by payment date from same raw file
+                    ach_rows = raw[raw["Payment Type"].astype(str).str.strip().str.lower() == "ach"].copy()
+                    ach_filtered = pd.DataFrame()
+                    if not ach_rows.empty:
+                        ach_filtered = ach_rows[["Payment Date", "Payment Impact"]].rename(columns={
+                            "Payment Date": "payment_date",
+                            "Payment Impact": "amount",
+                        })
+                        ach_filtered["amount"] = pd.to_numeric(
+                            ach_filtered["amount"].astype(str).str.replace(r"[\$,]", "", regex=True), errors="coerce"
+                        )
+                        ach_filtered = ach_filtered.groupby("payment_date", as_index=False)["amount"].sum()
+
+                    st.info(
+                        f"{len(filtered):,} unique checks ready to upload"
+                        + (f" · {len(ach_filtered):,} ACH batch dates also found" if not ach_filtered.empty else "")
+                    )
                     st.dataframe(filtered.head(10), use_container_width=True)
 
                     if st.button("Add to Issued Checks Database", type="primary", key="btn_issued"):
-                        # Persist any new cycles the user approved
                         for cycle, decision in cycle_decisions.items():
                             if decision == "Add to this subsidiary":
                                 add_allowed_cycle(subsidiary, cycle)
@@ -180,7 +204,11 @@ if page == "Upload Files":
 
                         with st.spinner("Saving…"):
                             result = upsert_issued_checks(filtered, subsidiary)
-                        st.success(f"{result['inserted']:,} rows added · {result['skipped']:,} duplicates skipped")
+                            ach_result = upsert_issued_ach(ach_filtered, subsidiary) if not ach_filtered.empty else None
+                        msg = f"{result['inserted']:,} checks added · {result['skipped']:,} duplicates skipped"
+                        if ach_result:
+                            msg += f" · {ach_result['inserted']:,} ACH batches added"
+                        st.success(msg)
             except Exception as exc:
                 st.error(f"Could not read file: {exc}")
 
@@ -220,13 +248,39 @@ if page == "Upload Files":
                         .astype(float).abs()
                     )
 
-                    st.info(f"{len(filtered):,} check rows found ({len(raw) - len(filtered):,} non-check rows excluded)")
+                    # ACH: filter for PREAUTHORIZED DEBIT rows from same raw file
+                    ach_bank_rows = raw[
+                        raw["Transaction Detail"].astype(str).str.strip().str.contains(
+                            "PREAUTHORIZED DEBIT CURATIVETPALF", na=False
+                        )
+                    ].copy()
+                    ach_bank_filtered = pd.DataFrame()
+                    if not ach_bank_rows.empty:
+                        ach_bank_filtered = ach_bank_rows[["Post Date", "Amount"]].rename(columns={
+                            "Post Date": "date",
+                            "Amount": "amount",
+                        })
+                        ach_bank_filtered["amount"] = (
+                            ach_bank_filtered["amount"].astype(str).str.strip()
+                            .str.replace(r"[\$,\s]", "", regex=True)
+                            .str.replace(r"^\((.+)\)$", r"-\1", regex=True)
+                            .astype(float).abs()
+                        )
+
+                    st.info(
+                        f"{len(filtered):,} check rows found ({len(raw) - len(filtered):,} non-check rows excluded)"
+                        + (f" · {len(ach_bank_filtered):,} ACH clearing rows also found" if not ach_bank_filtered.empty else "")
+                    )
                     st.dataframe(filtered.head(10), use_container_width=True)
 
                     if st.button("Add to Cleared Checks Database", type="primary", key="btn_cleared"):
                         with st.spinner("Saving…"):
                             result = upsert_cleared_checks(filtered, subsidiary)
-                        st.success(f"{result['inserted']:,} rows added · {result['skipped']:,} duplicates skipped")
+                            ach_result = upsert_cleared_ach(ach_bank_filtered, subsidiary) if not ach_bank_filtered.empty else None
+                        msg = f"{result['inserted']:,} checks added · {result['skipped']:,} duplicates skipped"
+                        if ach_result:
+                            msg += f" · {ach_result['inserted']:,} ACH clearings added"
+                        st.success(msg)
             except Exception as exc:
                 st.error(f"Could not read file: {exc}")
 
@@ -268,6 +322,7 @@ if page == "Upload Files":
                     st.success(f"{result['inserted']:,} rows added · {result['skipped']:,} duplicates skipped")
         except Exception as exc:
             st.error(f"Could not read file: {exc}")
+
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -430,6 +485,72 @@ elif page == "Reconciliation & Dashboard":
                 labels={"days_outstanding": "Days Outstanding"},
             )
             st.plotly_chart(fig, use_container_width=True)
+
+    # ── ACH Reconciliation ───────────────────────────────────────────────
+    st.divider()
+    st.subheader("ACH Batch Reconciliation")
+    st.caption("Issued ACH totals are matched against bank clearings within a ±7 day window.")
+
+    with st.spinner("Loading ACH data…"):
+        issued_ach, cleared_ach = load_ach_data(subsidiary)
+
+    if issued_ach.empty:
+        st.info("No issued ACH data uploaded yet. Go to **Upload Files** to get started.")
+    else:
+        ach = reconcile_ach(issued_ach, cleared_ach)
+        ach_stats = ach["stats"]
+
+        a1, a2, a3, a4 = st.columns(4)
+        a1.metric("Issued ACH Batches", f"{ach_stats['total_issued_ach']:,}", fmt_acct(ach_stats['issued_ach_amount']))
+        a2.metric("Matched", f"{ach_stats['total_matched_ach']:,}")
+        a3.metric("Outstanding ACH", f"{ach_stats['total_outstanding_ach']:,}", fmt_acct(ach_stats['outstanding_ach_amount']))
+        a4.metric("Unrecognized Bank ACH", f"{ach_stats['unmatched_cleared_count']:,}")
+
+        st.divider()
+
+        ach_tab1, ach_tab2, ach_tab3 = st.tabs([
+            f"Outstanding ACH Batches  ({ach_stats['total_outstanding_ach']})",
+            f"Matched ACH  ({ach_stats['total_matched_ach']})",
+            f"Unrecognized Bank ACH  ({ach_stats['unmatched_cleared_count']})",
+        ])
+
+        with ach_tab1:
+            if ach["outstanding"].empty:
+                st.success("All issued ACH batches have been matched.")
+            else:
+                display = ach["outstanding"].copy()
+                display.columns = ["Payment Date", "Amount"]
+                display["Amount"] = display["Amount"].map(fmt_acct)
+                st.dataframe(display, use_container_width=True, hide_index=True)
+
+                buf = io.StringIO()
+                display.to_csv(buf, index=False)
+                st.download_button(
+                    label="Download Outstanding ACH CSV",
+                    data=buf.getvalue(),
+                    file_name=f"outstanding_ach_{subsidiary.replace(' ', '_')}_{pd.Timestamp.today().strftime('%Y%m%d')}.csv",
+                    mime="text/csv",
+                )
+
+        with ach_tab2:
+            if ach["matched"].empty:
+                st.info("No matched ACH batches yet.")
+            else:
+                display = ach["matched"].copy()
+                display.columns = ["Payment Date", "Issued Amount", "Cleared Date", "Cleared Amount", "Days Difference"]
+                display["Issued Amount"] = display["Issued Amount"].map(fmt_acct)
+                display["Cleared Amount"] = display["Cleared Amount"].map(fmt_acct)
+                st.dataframe(display, use_container_width=True, hide_index=True)
+
+        with ach_tab3:
+            if ach["unmatched_cleared"].empty:
+                st.success("No unrecognized bank ACH entries.")
+            else:
+                st.caption("Bank ACH clearings with no matching issued ACH batch within ±7 days.")
+                display = ach["unmatched_cleared"][["date", "amount"]].copy()
+                display.columns = ["Cleared Date", "Amount"]
+                display["Amount"] = display["Amount"].map(fmt_acct)
+                st.dataframe(display, use_container_width=True, hide_index=True)
 
 
 # ════════════════════════════════════════════════════════════════════════════
