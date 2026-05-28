@@ -360,6 +360,8 @@ elif page == "Seed Upload (Admin)":
                 filtered = filtered[
                     filtered["check_number"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True) != "0"
                 ].copy()
+                filtered["amount"] = pd.to_numeric(filtered["amount"].astype(str).str.replace(r"[\$,]", "", regex=True), errors="coerce")
+                filtered = filtered.groupby(["check_number", "payment_date"], as_index=False)["amount"].sum()
 
                 st.info(
                     f"{len(filtered):,} historical check records found "
