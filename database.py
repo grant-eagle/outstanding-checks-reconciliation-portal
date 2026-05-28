@@ -241,6 +241,21 @@ def load_seed_checks(df: pd.DataFrame, subsidiary: str) -> dict:
     return {"inserted": len(df)}
 
 
+def get_allowed_accounts(subsidiary: str) -> list:
+    result = _client().table("subsidiary_accounts").select("account_number").eq("subsidiary", subsidiary).execute()
+    return [r["account_number"] for r in result.data] if result.data else []
+
+
+def add_allowed_account(subsidiary: str, account_number: str) -> None:
+    try:
+        _client().table("subsidiary_accounts").insert({
+            "subsidiary": subsidiary,
+            "account_number": account_number,
+        }).execute()
+    except Exception:
+        pass  # Already exists — unique constraint
+
+
 def get_annotations(subsidiary: str) -> pd.DataFrame:
     return _fetch_all("discrepancy_annotations", {"subsidiary": subsidiary})
 

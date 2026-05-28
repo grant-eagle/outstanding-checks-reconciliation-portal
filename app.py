@@ -32,6 +32,8 @@ from database import (
     get_date_range,
     get_allowed_cycles,
     add_allowed_cycle,
+    get_allowed_accounts,
+    add_allowed_account,
     get_annotations,
     save_annotations,
 )
@@ -55,6 +57,11 @@ def cached_date_range(table: str, date_col: str, subsidiary: str):
 @st.cache_data(ttl=300, show_spinner=False)
 def cached_allowed_cycles(subsidiary: str) -> list:
     return get_allowed_cycles(subsidiary)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def cached_allowed_accounts(subsidiary: str) -> list:
+    return get_allowed_accounts(subsidiary)
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -395,7 +402,7 @@ if page == "Upload Files":
     # ── Cleared Checks ───────────────────────────────────────────────────
     with col_cleared:
         st.subheader("Cleared Checks (Bank)")
-        st.caption("Required columns: **Post Date · Transaction Name - BAI · Customer Reference · Status · Amount**")
+        st.caption("Required columns: **Account Number · Post Date · Transaction Name - BAI · Customer Reference · Status · Amount**")
         cleared_range = cached_date_range("cleared_checks", "date", subsidiary)
         if cleared_range:
             st.info(f"Data already uploaded: **{cleared_range}**")
@@ -406,13 +413,43 @@ if page == "Upload Files":
         if cleared_file:
             try:
                 raw = pd.read_csv(cleared_file)
-                required = ["Post Date", "Transaction Name - BAI", "Customer Reference", "Status", "Amount"]
+                required = ["Account Number", "Post Date", "Transaction Name - BAI", "Customer Reference", "Status", "Amount"]
                 missing = [c for c in required if c not in raw.columns]
                 if missing:
                     st.error(f"Missing columns: {', '.join(missing)}")
                 else:
-                    filtered = raw[
-                        raw["Transaction Name - BAI"].astype(str).str.strip().str.lower().str.contains("check", na=False)
+                    # Validate Account Numbers
+                    allowed_accounts = cached_allowed_accounts(subsidiary)
+                    upload_accounts = raw["Account Number"].astype(str).str.strip().unique().tolist()
+                    unknown_accounts = [a for a in upload_accounts if a not in allowed_accounts]
+
+                    account_decisions = {}
+                    if unknown_accounts:
+                        st.warning(f"{len(unknown_accounts)} unrecognized Account Number(s) found in this file.")
+                        for acct in sorted(unknown_accounts):
+                            count = len(raw[raw["Account Number"].astype(str).str.strip() == acct])
+                            st.markdown(f"**{acct}** — {count:,} rows")
+                            st.caption(
+                                f'Is **"{acct}"** a valid account for **{subsidiary}**? '
+                                f'Or should it be removed from this upload?'
+                            )
+                            decision = st.radio(
+                                "",
+                                ["Add to this subsidiary", "Remove from upload"],
+                                key=f"acct_decision_{acct}",
+                                horizontal=True,
+                            )
+                            account_decisions[acct] = decision
+                        st.divider()
+
+                    # Build working set: allowed accounts + any user-approved unknowns
+                    working = raw[raw["Account Number"].astype(str).str.strip().isin(allowed_accounts)].copy()
+                    for acct, decision in account_decisions.items():
+                        if decision == "Add to this subsidiary":
+                            working = pd.concat([working, raw[raw["Account Number"].astype(str).str.strip() == acct]], ignore_index=True)
+
+                    filtered = working[
+                        working["Transaction Name - BAI"].astype(str).str.strip().str.lower().str.contains("check", na=False)
                     ].copy()
                     filtered = filtered[["Post Date", "Transaction Name - BAI", "Customer Reference", "Status", "Amount"]].rename(columns={
                         "Post Date": "date",
@@ -428,12 +465,12 @@ if page == "Upload Files":
                         .astype(float).abs()
                     )
 
-                    # ACH: filter for PREAUTHORIZED DEBIT rows from same raw file
-                    ach_bank_rows = raw[
-                        raw["Transaction Detail"].astype(str).str.strip().str.contains(
+                    # ACH: filter for PREAUTHORIZED DEBIT rows from working set
+                    ach_bank_rows = working[
+                        working["Transaction Detail"].astype(str).str.strip().str.contains(
                             "PREAUTHORIZED DEBIT CURATIVE", na=False
                         ) &
-                    raw["Transaction Detail"].astype(str).str.contains(
+                        working["Transaction Detail"].astype(str).str.contains(
                             "HCCLAIMPMT  ACH", na=False
                         )
                     ].copy()
@@ -452,12 +489,18 @@ if page == "Upload Files":
                         ach_bank_filtered = ach_bank_filtered.groupby("date", as_index=False)["amount"].sum()
 
                     st.info(
-                        f"{len(filtered):,} check rows found ({len(raw) - len(filtered):,} non-check rows excluded)"
+                        f"{len(filtered):,} check rows found ({len(working) - len(filtered):,} non-check rows excluded)"
                         + (f" · {len(ach_bank_filtered):,} ACH clearing rows also found" if not ach_bank_filtered.empty else "")
                     )
                     st.dataframe(filtered.head(10), use_container_width=True)
 
                     if st.button("Add to Cleared Checks Database", type="primary", key="btn_cleared"):
+                        for acct, decision in account_decisions.items():
+                            if decision == "Add to this subsidiary":
+                                add_allowed_account(subsidiary, acct)
+                        if account_decisions:
+                            st.cache_data.clear()
+
                         with st.spinner("Saving…"):
                             result = upsert_cleared_checks(filtered, subsidiary)
                             ach_result = upsert_cleared_ach(ach_bank_filtered, subsidiary) if not ach_bank_filtered.empty else None
