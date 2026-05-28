@@ -419,6 +419,7 @@ elif page == "Reconciliation & Dashboard":
         "",
         "Reach out to CNB",
         "CNB Labeled Incorrect Check # - Remove Incorrect Check # from OS Checks",
+        "Bank Error",
         "Possible Fraud",
         "Custom",
     ]
