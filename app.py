@@ -20,6 +20,7 @@ from database import (
     get_seed_checks,
     load_seed_checks,
     clear_seed_checks,
+    get_date_range,
 )
 from reconciliation import reconcile
 
@@ -80,6 +81,11 @@ if page == "Upload Files":
     with col_issued:
         st.subheader("Issued Checks")
         st.caption("Required columns: **Payment Date · Payment Number · Payment Type · Payment Impact**")
+        issued_range = get_date_range("issued_checks", "payment_date", subsidiary)
+        if issued_range:
+            st.info(f"Data already uploaded: **{issued_range}**")
+        else:
+            st.info("No issued checks uploaded yet.")
         issued_file = st.file_uploader("Choose CSV", type="csv", key="up_issued")
 
         if issued_file:
@@ -114,6 +120,11 @@ if page == "Upload Files":
     with col_cleared:
         st.subheader("Cleared Checks (Bank)")
         st.caption("Required columns: **Post Date · Transaction Name - BAI · Customer Reference · Status · Amount**")
+        cleared_range = get_date_range("cleared_checks", "date", subsidiary)
+        if cleared_range:
+            st.info(f"Data already uploaded: **{cleared_range}**")
+        else:
+            st.info("No cleared checks uploaded yet.")
         cleared_file = st.file_uploader("Choose CSV", type="csv", key="up_cleared")
 
         if cleared_file:
