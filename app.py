@@ -84,8 +84,10 @@ if page == "Upload Files":
                         "Payment Number": "check_number",
                         "Payment Impact": "amount",
                     })
+                    filtered["amount"] = pd.to_numeric(filtered["amount"].astype(str).str.replace(r"[\$,]", "", regex=True), errors="coerce")
+                    filtered = filtered.groupby(["check_number", "payment_date"], as_index=False)["amount"].sum()
 
-                    st.info(f"{len(filtered):,} check rows found ({len(raw) - len(filtered):,} non-check rows excluded)")
+                    st.info(f"{len(filtered):,} unique checks found ({len(raw) - len(filtered):,} rows aggregated/excluded)")
                     st.dataframe(filtered.head(10), use_container_width=True)
 
                     if st.button("Add to Issued Checks Database", type="primary", key="btn_issued"):
