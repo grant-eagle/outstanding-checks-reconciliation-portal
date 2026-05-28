@@ -190,7 +190,7 @@ if page == "Upload Files":
                         ach_filtered = ach_filtered.groupby("payment_date", as_index=False)["amount"].sum()
 
                     st.info(
-                        f"{len(filtered):,} unique checks ready to upload"
+                        f"{len(filtered):,} checks found in file (checks already in the database will be skipped automatically on upload)"
                         + (f" · {len(ach_filtered):,} ACH batch dates also found" if not ach_filtered.empty else "")
                     )
                     st.dataframe(filtered.head(10), use_container_width=True)
