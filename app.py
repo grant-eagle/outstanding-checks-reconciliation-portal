@@ -332,10 +332,17 @@ if page == "Upload Files":
 elif page == "Reconciliation & Dashboard":
     st.title(f"Reconciliation & Dashboard — {subsidiary}")
 
-    col_refresh, _ = st.columns([1, 5])
+    col_refresh, col_asof, _ = st.columns([1, 2, 3])
     if col_refresh.button("Refresh Data"):
         st.cache_data.clear()
         st.rerun()
+
+    as_of_date = col_asof.date_input(
+        "As of Date",
+        value=pd.Timestamp.today().date(),
+        help="Show the outstanding balance as of this date. Issued and voided checks are filtered by payment date; cleared checks by clearing date.",
+    )
+    as_of_ts = pd.Timestamp(as_of_date)
 
     with st.spinner("Loading data…"):
         issued, cleared, seed, voided = load_reconciliation_data(subsidiary)
@@ -343,6 +350,17 @@ elif page == "Reconciliation & Dashboard":
     if issued.empty and seed.empty:
         st.warning("No check data in the database yet. Go to **Upload Files** or **Seed Upload (Admin)** to get started.")
         st.stop()
+
+    # Apply as-of-date filter
+    if not issued.empty:
+        issued = issued[pd.to_datetime(issued["payment_date"]) <= as_of_ts].copy()
+    if not cleared.empty:
+        cleared = cleared[pd.to_datetime(cleared["date"]) <= as_of_ts].copy()
+    if not voided.empty:
+        voided = voided[pd.to_datetime(voided["payment_date"]) <= as_of_ts].copy()
+    # seed is a fixed historical baseline — no date filter applied
+
+    st.caption(f"Showing outstanding balance as of **{as_of_date.strftime('%B %d, %Y')}**")
 
     results = reconcile(issued, cleared, seed, voided)
     stats = results["stats"]
@@ -381,7 +399,7 @@ elif page == "Reconciliation & Dashboard":
         st.download_button(
             label="Download Outstanding Checks CSV",
             data=buf.getvalue(),
-            file_name=f"outstanding_checks_{subsidiary.replace(' ', '_')}_{pd.Timestamp.today().strftime('%Y%m%d')}.csv",
+            file_name=f"outstanding_checks_{subsidiary.replace(' ', '_')}_as_of_{as_of_date.strftime('%Y%m%d')}.csv",
             mime="text/csv",
             type="primary",
         )
@@ -494,6 +512,11 @@ elif page == "Reconciliation & Dashboard":
 
     with st.spinner("Loading ACH data…"):
         issued_ach, cleared_ach = load_ach_data(subsidiary)
+
+    if not issued_ach.empty:
+        issued_ach = issued_ach[pd.to_datetime(issued_ach["payment_date"]) <= as_of_ts].copy()
+    if not cleared_ach.empty:
+        cleared_ach = cleared_ach[pd.to_datetime(cleared_ach["date"]) <= as_of_ts].copy()
 
     if issued_ach.empty:
         st.info("No issued ACH data uploaded yet. Go to **Upload Files** to get started.")
