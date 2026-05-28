@@ -363,9 +363,13 @@ elif page == "Seed Upload (Admin)":
                 filtered["amount"] = pd.to_numeric(filtered["amount"].astype(str).str.replace(r"[\$,]", "", regex=True), errors="coerce")
                 filtered = filtered.groupby(["check_number", "payment_date"], as_index=False)["amount"].sum()
 
+                pre_agg = raw[raw["Export Type"].astype(str).str.strip().str.lower().isin(["hardcopy", "check"])].copy()
+                ach_excluded = len(raw) - len(pre_agg)
+                consolidated = len(pre_agg) - len(filtered)
                 st.info(
-                    f"{len(filtered):,} historical check records found "
-                    f"({len(raw) - len(filtered):,} non-check rows excluded)"
+                    f"{len(filtered):,} unique checks found · "
+                    f"{consolidated:,} duplicate lines consolidated · "
+                    f"{ach_excluded:,} ACH/EFT rows excluded"
                 )
                 st.dataframe(filtered.head(10), use_container_width=True)
 
