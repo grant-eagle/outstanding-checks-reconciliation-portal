@@ -253,6 +253,31 @@ def log_action(email: str, display_name: str, action: str, details: str = "") ->
         pass  # Never let audit logging break the app
 
 
+def log_login(email: str, display_name: str) -> None:
+    """Log a login only if the same user hasn't logged in within the last 30 minutes."""
+    try:
+        cutoff = (pd.Timestamp.utcnow() - pd.Timedelta(minutes=30)).isoformat()
+        client = _client()
+        recent = (
+            client.table("audit_log")
+            .select("id")
+            .eq("email", email)
+            .eq("action", "login")
+            .gte("created_at", cutoff)
+            .limit(1)
+            .execute()
+        )
+        if not recent.data:
+            client.table("audit_log").insert({
+                "email": email,
+                "display_name": display_name,
+                "action": "login",
+                "details": "Logged in",
+            }).execute()
+    except Exception:
+        pass
+
+
 def get_audit_log(limit: int = 1000) -> pd.DataFrame:
     result = (
         _client().table("audit_log")

@@ -39,6 +39,7 @@ from database import (
     get_user_name,
     save_user_name,
     log_action,
+    log_login,
     get_audit_log,
 )
 from reconciliation import reconcile, reconcile_ach
@@ -337,7 +338,7 @@ if not require_login():
 
 # Log login once per session
 if not st.session_state.get("login_logged"):
-    log_action(st.session_state.user_email, st.session_state.user_name, "login", "Logged in")
+    log_login(st.session_state.user_email, st.session_state.user_name)
     st.session_state.login_logged = True
 
 
