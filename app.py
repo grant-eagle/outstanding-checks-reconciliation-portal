@@ -284,6 +284,7 @@ st.sidebar.markdown("""
 section[data-testid="stSidebar"] .stButton > button {
     width: 100%;
     text-align: left;
+    justify-content: flex-start;
     border: none;
     background: transparent;
     color: inherit;
