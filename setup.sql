@@ -4,20 +4,19 @@
 -- ============================================================
 
 -- ── App secret configuration ──────────────────────────────
--- Replace <YOUR_APP_SECRET> with the value from your Streamlit
--- secrets (APP_SECRET). Run this once whenever you rotate the secret.
--- ALTER DATABASE postgres SET app.settings.app_secret TO '<YOUR_APP_SECRET>';
-
--- Shorthand used in every RLS policy below.
--- A request is valid only when the x-app-secret header matches the
--- value stored in the database config. Requests without the header
--- (e.g. direct API calls with just the anon key) are denied.
+-- IMPORTANT: Replace 'REPLACE_WITH_YOUR_APP_SECRET' below with the
+-- actual value of APP_SECRET from your Streamlit secrets before running.
+-- Re-run this script any time you rotate the secret.
+--
+-- Every RLS policy calls _app_secret_ok(). Direct API requests using
+-- only the anon key (without the correct x-app-secret header) are
+-- denied across all tables.
 CREATE OR REPLACE FUNCTION _app_secret_ok() RETURNS boolean
     LANGUAGE sql SECURITY DEFINER SET search_path = public AS
 $$
     SELECT coalesce(
         current_setting('request.headers', true)::json->>'x-app-secret', ''
-    ) = current_setting('app.settings.app_secret', true)
+    ) = 'REPLACE_WITH_YOUR_APP_SECRET'
 $$;
 
 
