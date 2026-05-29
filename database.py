@@ -241,6 +241,29 @@ def load_seed_checks(df: pd.DataFrame, subsidiary: str) -> dict:
     return {"inserted": len(df)}
 
 
+def log_action(email: str, display_name: str, action: str, details: str = "") -> None:
+    try:
+        _client().table("audit_log").insert({
+            "email": email,
+            "display_name": display_name,
+            "action": action,
+            "details": details or "",
+        }).execute()
+    except Exception:
+        pass  # Never let audit logging break the app
+
+
+def get_audit_log(limit: int = 1000) -> pd.DataFrame:
+    result = (
+        _client().table("audit_log")
+        .select("*")
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return pd.DataFrame(result.data) if result.data else pd.DataFrame()
+
+
 def get_user_name(email: str) -> str:
     result = _client().table("user_profiles").select("display_name").eq("email", email).execute()
     return result.data[0]["display_name"] if result.data else None

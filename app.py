@@ -38,6 +38,8 @@ from database import (
     save_annotations,
     get_user_name,
     save_user_name,
+    log_action,
+    get_audit_log,
 )
 from reconciliation import reconcile, reconcile_ach
 
@@ -333,6 +335,16 @@ def require_login() -> bool:
 if not require_login():
     st.stop()
 
+# Log login once per session
+if not st.session_state.get("login_logged"):
+    log_action(st.session_state.user_email, st.session_state.user_name, "login", "Logged in")
+    st.session_state.login_logged = True
+
+
+def is_admin() -> bool:
+    admin_emails = [e.strip().lower() for e in st.secrets.get("ADMIN_EMAILS", "").split(",") if e.strip()]
+    return st.session_state.get("user_email", "").lower() in admin_emails
+
 
 # ── Sidebar ─────────────────────────────────────────────────────────────────
 subsidiaries = [s.strip() for s in st.secrets.get("SUBSIDIARIES", "Default").split(",")]
@@ -412,6 +424,8 @@ section[data-testid="stSidebarUserContent"] > [data-testid="stElementContainer"]
 """, unsafe_allow_html=True)
 
 _main_pages = ["🚀 Upload Files", "📊 Reconciliation & Dashboard"]
+if is_admin():
+    _main_pages.append("🔑 System Admin")
 if "page" not in st.session_state:
     st.session_state.page = _main_pages[0]
     st.session_state._radio_page = _main_pages[0]
@@ -558,6 +572,9 @@ if page == "🚀 Upload Files":
                         if ach_result:
                             msg += f" · {ach_result['inserted']:,} ACH batches added"
                         st.success(msg)
+                        log_action(st.session_state.user_email, st.session_state.user_name,
+                            "upload_issued_checks",
+                            f"{subsidiary} | {issued_file.name} | {result['inserted']:,} added, {result['skipped']:,} skipped")
             except Exception as exc:
                 st.error(f"Could not read file: {exc}")
 
@@ -669,6 +686,9 @@ if page == "🚀 Upload Files":
                         if ach_result:
                             msg += f" · {ach_result['inserted']:,} ACH clearings added"
                         st.success(msg)
+                        log_action(st.session_state.user_email, st.session_state.user_name,
+                            "upload_cleared_checks",
+                            f"{subsidiary} | {cleared_file.name} | {result['inserted']:,} added, {result['skipped']:,} skipped")
             except Exception as exc:
                 st.error(f"Could not read file: {exc}")
 
@@ -708,6 +728,9 @@ if page == "🚀 Upload Files":
                     with st.spinner("Saving…"):
                         result = upsert_voided_checks(filtered, subsidiary)
                     st.success(f"{result['inserted']:,} rows added · {result['skipped']:,} duplicates skipped")
+                    log_action(st.session_state.user_email, st.session_state.user_name,
+                        "upload_voided_checks",
+                        f"{subsidiary} | {voided_file.name} | {result['inserted']:,} added, {result['skipped']:,} skipped")
         except Exception as exc:
             st.error(f"Could not read file: {exc}")
 
@@ -969,5 +992,44 @@ elif page == "⚙️ Seed Upload (Admin)":
                     with st.spinner("Loading seed data…"):
                         result = load_seed_checks(filtered, subsidiary)
                     st.success(f"{result['inserted']:,} historical checks loaded for {subsidiary}.")
+                    log_action(st.session_state.user_email, st.session_state.user_name,
+                        "upload_seed_checks",
+                        f"{subsidiary} | {seed_file.name} | {result['inserted']:,} loaded")
         except Exception as exc:
             st.error(f"Could not read file: {exc}")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# PAGE: SYSTEM ADMIN
+# ════════════════════════════════════════════════════════════════════════════
+elif page == "🔑 System Admin":
+    if not is_admin():
+        st.error("Access denied.")
+        st.stop()
+
+    st.title("System Admin")
+
+    st.subheader("Audit Log")
+    st.caption("All login and upload activity across all users and subsidiaries.")
+
+    with st.spinner("Loading…"):
+        log_df = get_audit_log()
+
+    if log_df.empty:
+        st.info("No audit log entries yet.")
+    else:
+        display = log_df[["created_at", "display_name", "email", "action", "details"]].copy()
+        display["created_at"] = pd.to_datetime(display["created_at"]).dt.strftime("%m/%d/%Y %I:%M %p UTC")
+        display["action"] = display["action"].str.replace("_", " ").str.title()
+        display.columns = ["Timestamp", "Name", "Email", "Action", "Details"]
+
+        st.dataframe(display, use_container_width=True, hide_index=True)
+
+        buf = io.StringIO()
+        display.to_csv(buf, index=False)
+        st.download_button(
+            "Download Audit Log",
+            data=buf.getvalue(),
+            file_name=f"audit_log_{pd.Timestamp.today().strftime('%Y%m%d')}.csv",
+            mime="text/csv",
+        )

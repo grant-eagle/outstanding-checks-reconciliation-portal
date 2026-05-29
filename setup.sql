@@ -185,6 +185,24 @@ INSERT INTO subsidiary_accounts (subsidiary, account_number) VALUES
 ON CONFLICT DO NOTHING;
 
 
+-- ── audit_log ────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS audit_log (
+    id           UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
+    email        TEXT        NOT NULL,
+    display_name TEXT        NOT NULL DEFAULT '',
+    action       TEXT        NOT NULL,
+    details      TEXT        DEFAULT '',
+    created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at DESC);
+ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
+GRANT SELECT, INSERT ON audit_log TO anon;
+DROP POLICY IF EXISTS "audit_select" ON audit_log;
+CREATE POLICY "audit_select" ON audit_log FOR SELECT TO anon USING (true);
+DROP POLICY IF EXISTS "audit_insert" ON audit_log;
+CREATE POLICY "audit_insert" ON audit_log FOR INSERT TO anon WITH CHECK (true);
+
+
 -- ── user_profiles ─────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS user_profiles (
     email        TEXT        PRIMARY KEY,
