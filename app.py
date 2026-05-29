@@ -276,55 +276,38 @@ subsidiaries = [s.strip() for s in st.secrets.get("SUBSIDIARIES", "Default").spl
 
 st.sidebar.title("Check Reconciliation")
 
-if "subsidiary" not in st.session_state:
-    st.session_state.subsidiary = subsidiaries[0]
-
 st.sidebar.markdown("""
 <style>
-section[data-testid="stSidebar"] .stButton button {
-    width: 100%;
-    display: flex !important;
-    justify-content: flex-start !important;
-    text-align: left !important;
-    border: none;
-    background: transparent;
-    color: inherit;
-    padding: 0.4rem 1rem;
+/* Subsidiary radio — hide circles, highlight selected, left-aligned */
+section[data-testid="stSidebar"] .stRadio label {
+    padding: 4px 16px;
     border-radius: 6px;
-    font-weight: normal;
-    box-shadow: none;
-    transition: background 0.15s;
+    cursor: pointer;
 }
-section[data-testid="stSidebar"] .stButton button * {
-    text-align: left !important;
-    justify-content: flex-start !important;
+section[data-testid="stSidebar"] .stRadio label > div:first-child {
+    display: none;
 }
-section[data-testid="stSidebar"] .stButton button:hover {
-    background: rgba(128,128,128,0.15) !important;
-    border: none;
-    box-shadow: none;
-}
-section[data-testid="stSidebar"] .stButton button[kind="primary"] {
-    background: rgba(128,128,128,0.25) !important;
+section[data-testid="stSidebar"] .stRadio label:has(input:checked) {
+    background: rgba(128,128,128,0.25);
     font-weight: 600;
 }
-section[data-testid="stSidebar"] .stButton button[kind="primary"]:hover {
-    background: rgba(128,128,128,0.35) !important;
+section[data-testid="stSidebar"] .stRadio label:hover:not(:has(input:checked)) {
+    background: rgba(128,128,128,0.12);
+}
+/* Page nav radio (after first divider) — restore default appearance */
+section[data-testid="stSidebar"] hr ~ .stRadio label > div:first-child {
+    display: flex !important;
+}
+section[data-testid="stSidebar"] hr ~ .stRadio label {
+    padding: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    font-weight: normal !important;
 }
 </style>
 """, unsafe_allow_html=True)
 
-for sub in subsidiaries:
-    if st.sidebar.button(
-        sub,
-        key=f"sub_{sub}",
-        use_container_width=True,
-        type="primary" if sub == st.session_state.subsidiary else "secondary",
-    ):
-        st.session_state.subsidiary = sub
-        st.rerun()
-
-subsidiary = st.session_state.subsidiary
+subsidiary = st.sidebar.radio("", subsidiaries, label_visibility="collapsed")
 st.sidebar.divider()
 page = st.sidebar.radio("", ["Upload Files", "Reconciliation & Dashboard", "Seed Upload (Admin)"])
 st.sidebar.divider()
