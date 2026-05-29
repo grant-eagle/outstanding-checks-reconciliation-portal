@@ -320,17 +320,21 @@ section[data-testid="stSidebar"] hr ~ .stRadio label[data-baseweb="radio"] {
     background: transparent !important;
     font-weight: normal !important;
 }
-/* Flex column sidebar so seed button can be pushed to bottom */
+/* Pin seed button to bottom of sidebar */
 section[data-testid="stSidebarUserContent"] {
-    display: flex !important;
-    flex-direction: column !important;
-    min-height: calc(100vh - 3rem) !important;
+    position: relative !important;
+    min-height: calc(100vh - 2rem) !important;
+    padding-bottom: 4rem !important;
 }
-section[data-testid="stSidebarUserContent"] > [data-testid="stElementContainer"]:has(#sidebar-spacer) {
-    flex: 1 1 auto !important;
+section[data-testid="stSidebarUserContent"] > [data-testid="stElementContainer"]:has(#sidebar-spacer) ~ [data-testid="stElementContainer"] {
+    position: absolute !important;
+    bottom: 1rem !important;
+    left: 1rem !important;
+    right: 1rem !important;
+    width: auto !important;
 }
-/* Seed upload button — subdued, full width */
-section[data-testid="stSidebar"] [data-testid="stElementContainer"]:has(#sidebar-spacer) ~ [data-testid="stElementContainer"] button {
+/* Seed upload button — subdued */
+section[data-testid="stSidebarUserContent"] > [data-testid="stElementContainer"]:has(#sidebar-spacer) ~ [data-testid="stElementContainer"] button {
     width: 100% !important;
     background: transparent !important;
     border: 1px solid rgba(128,128,128,0.3) !important;
