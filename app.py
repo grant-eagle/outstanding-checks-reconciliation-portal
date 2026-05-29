@@ -307,6 +307,8 @@ def require_login() -> bool:
 
     # Step 1: login form
     with col:
+        if st.session_state.pop("inactivity_logout", False):
+            st.warning("You were automatically logged out after 10 minutes of inactivity.")
         st.markdown(
             "<h2 style='text-align:center; color:white; margin-bottom:1.5rem;'>"
             "🏦 Check Reconciliation Portal</h2>",
@@ -342,6 +344,13 @@ def require_login() -> bool:
     return False
 
 
+# Handle auto-logout from inactivity timer
+if st.query_params.get("auto_logout") == "1":
+    st.session_state.clear()
+    st.session_state["inactivity_logout"] = True
+    st.query_params.clear()
+    st.rerun()
+
 if not require_login():
     st.stop()
 
@@ -349,6 +358,78 @@ if not require_login():
 if not st.session_state.get("login_logged"):
     log_login(st.session_state.user_email, st.session_state.user_name)
     st.session_state.login_logged = True
+
+# Inactivity auto-logout: warn at 9 min, logout at 10 min
+st.components.v1.html("""
+<script>
+(function() {
+    const p = window.parent;
+    if (p._inactivityInit) return;
+    p._inactivityInit = true;
+
+    const WARN_MS   = 9  * 60 * 1000;
+    const LOGOUT_MS = 10 * 60 * 1000;
+    let warnTimer, logoutTimer, countdownInterval;
+
+    function resetTimers() {
+        const modal = p.document.getElementById('inactivity-modal');
+        if (modal) modal.remove();
+        clearInterval(countdownInterval);
+        clearTimeout(warnTimer);
+        clearTimeout(logoutTimer);
+        warnTimer   = setTimeout(showWarning, WARN_MS);
+        logoutTimer = setTimeout(doLogout,    LOGOUT_MS);
+    }
+
+    function showWarning() {
+        const modal = p.document.createElement('div');
+        modal.id = 'inactivity-modal';
+        modal.style.cssText = [
+            'position:fixed;top:0;left:0;right:0;bottom:0',
+            'background:rgba(0,0,0,0.5)',
+            'z-index:9999',
+            'display:flex;align-items:center;justify-content:center'
+        ].join(';');
+        modal.innerHTML = `
+            <div style="background:white;border-radius:12px;padding:2rem;
+                        max-width:380px;width:90%;text-align:center;
+                        box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+                <h3 style="margin:0 0 0.5rem;color:#333;">Still there?</h3>
+                <p style="color:#666;margin:0 0 1.5rem;">
+                    You will be logged out in
+                    <strong><span id="inactivity-cd">60</span> seconds</strong>
+                    due to inactivity.
+                </p>
+                <button id="inactivity-btn" style="background:#ff4b4b;color:white;
+                    border:none;padding:0.75rem 2rem;border-radius:6px;
+                    font-size:1rem;cursor:pointer;width:100%;">
+                    Continue Session
+                </button>
+            </div>`;
+        p.document.body.appendChild(modal);
+
+        let secs = 60;
+        const el = p.document.getElementById('inactivity-cd');
+        countdownInterval = setInterval(() => {
+            secs--;
+            if (el) el.textContent = secs;
+        }, 1000);
+
+        p.document.getElementById('inactivity-btn').onclick = resetTimers;
+    }
+
+    function doLogout() {
+        p.location.href = p.location.pathname + '?auto_logout=1';
+    }
+
+    ['mousemove','mousedown','keypress','touchstart','scroll','click'].forEach(e => {
+        p.document.addEventListener(e, resetTimers, { passive: true });
+    });
+
+    resetTimers();
+})();
+</script>
+""", height=0)
 
 
 def is_admin() -> bool:
