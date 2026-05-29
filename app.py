@@ -1,6 +1,7 @@
 import io
 import streamlit as st
 import pandas as pd
+from streamlit_cookies_controller import CookieController
 
 def fmt_acct(val: float) -> str:
     """Format a number in accounting style: $1,234.56 or $(1,234.56) for negatives."""
@@ -255,6 +256,8 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+_cookies = CookieController()
+
 
 # ── Auth ────────────────────────────────────────────────────────────────────
 _AUTH_CSS = """
@@ -315,13 +318,19 @@ def require_login() -> bool:
                 "Sign in to continue</h4>",
                 unsafe_allow_html=True,
             )
-            email = st.text_input("Email", placeholder="you@curative.com")
+            remembered_email = _cookies.get("check_recon_email") or ""
+            email = st.text_input("Email", value=remembered_email, placeholder="you@curative.com")
             password = st.text_input("Password", type="password")
+            remember_me = st.checkbox("Remember me", value=bool(remembered_email))
             if st.form_submit_button("Log In", use_container_width=True, type="primary"):
                 if not email.strip():
                     st.error("Please enter your email.")
                 elif password == st.secrets.get("APP_PASSWORD", ""):
                     email_clean = email.strip().lower()
+                    if remember_me:
+                        _cookies.set("check_recon_email", email_clean, max_age=30 * 24 * 60 * 60)
+                    else:
+                        _cookies.remove("check_recon_email")
                     existing_name = get_user_name(email_clean)
                     st.session_state.authenticated = True
                     st.session_state.user_email = email_clean
