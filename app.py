@@ -325,7 +325,7 @@ section[data-testid="stSidebar"] hr ~ .stRadio label[data-baseweb="radio"] {
 
 subsidiary = st.sidebar.radio("", subsidiaries, label_visibility="collapsed")
 st.sidebar.divider()
-page = st.sidebar.radio("", ["Upload Files", "Reconciliation & Dashboard", "Seed Upload (Admin)"])
+page = st.sidebar.radio("", ["🚀 Upload Files", "📊 Reconciliation & Dashboard", "⚙️ Seed Upload (Admin)"])
 st.sidebar.divider()
 if st.sidebar.button("Log Out"):
     st.session_state.authenticated = False
@@ -335,7 +335,7 @@ if st.sidebar.button("Log Out"):
 # ════════════════════════════════════════════════════════════════════════════
 # PAGE: UPLOAD
 # ════════════════════════════════════════════════════════════════════════════
-if page == "Upload Files":
+if page == "🚀 Upload Files":
     st.title(f"Upload Check Files — {subsidiary}")
     st.caption(
         "Upload CSVs to append new records to each database. "
@@ -608,7 +608,7 @@ if page == "Upload Files":
 # ════════════════════════════════════════════════════════════════════════════
 # PAGE: RECONCILIATION & DASHBOARD
 # ════════════════════════════════════════════════════════════════════════════
-elif page == "Reconciliation & Dashboard":
+elif page == "📊 Reconciliation & Dashboard":
     st.title(f"Reconciliation & Dashboard — {subsidiary}")
 
     col_refresh, col_asof, _ = st.columns([1, 2, 3])
@@ -781,7 +781,7 @@ elif page == "Reconciliation & Dashboard":
 # ════════════════════════════════════════════════════════════════════════════
 # PAGE: SEED UPLOAD (ADMIN)
 # ════════════════════════════════════════════════════════════════════════════
-elif page == "Seed Upload (Admin)":
+elif page == "⚙️ Seed Upload (Admin)":
     st.title(f"Seed Upload (Admin) — {subsidiary}")
     st.caption(
         "Load the 12/31/2025 historical outstanding checks as the baseline for this subsidiary. "
