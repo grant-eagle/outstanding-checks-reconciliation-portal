@@ -36,6 +36,8 @@ from database import (
     add_allowed_account,
     get_annotations,
     save_annotations,
+    get_user_name,
+    save_user_name,
 )
 from reconciliation import reconcile, reconcile_ach
 
@@ -252,28 +254,52 @@ st.set_page_config(
 
 
 # ── Auth ────────────────────────────────────────────────────────────────────
+_AUTH_CSS = """
+<style>
+.stApp, [data-testid="stMain"] { background-color: #1b2838 !important; }
+[data-testid="stHeader"] { background-color: transparent !important; }
+[data-testid="stForm"] {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem 2rem 2rem;
+    border: none !important;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+}
+[data-testid="stForm"] label,
+[data-testid="stForm"] p { color: #333 !important; }
+</style>
+"""
+
 def require_login() -> bool:
-    if st.session_state.get("authenticated"):
+    if st.session_state.get("authenticated") and st.session_state.get("user_name"):
         return True
 
-    st.markdown("""
-    <style>
-    .stApp, [data-testid="stMain"] { background-color: #1b2838 !important; }
-    [data-testid="stHeader"] { background-color: transparent !important; }
-    [data-testid="stForm"] {
-        background: white;
-        border-radius: 12px;
-        padding: 1.5rem 2rem 2rem;
-        border: none !important;
-        box-shadow: 0 4px 24px rgba(0,0,0,0.4);
-    }
-    [data-testid="stForm"] label,
-    [data-testid="stForm"] p { color: #333 !important; }
-    </style>
-    """, unsafe_allow_html=True)
-
+    st.markdown(_AUTH_CSS, unsafe_allow_html=True)
     st.markdown("<br><br>", unsafe_allow_html=True)
     _, col, _ = st.columns([1, 1.1, 1])
+
+    # Step 2: authenticated but name not yet collected
+    if st.session_state.get("authenticated") and not st.session_state.get("user_name"):
+        with col:
+            with st.form("name_form"):
+                st.markdown(
+                    "<h4 style='text-align:center; color:#333; margin-bottom:0.25rem;'>"
+                    "One more thing…</h4>"
+                    "<p style='text-align:center; color:#666; margin-bottom:1rem;'>"
+                    "What would you like to be called?</p>",
+                    unsafe_allow_html=True,
+                )
+                name = st.text_input("Your name", placeholder="e.g. Grant")
+                if st.form_submit_button("Continue", use_container_width=True, type="primary"):
+                    if not name.strip():
+                        st.error("Please enter a name.")
+                    else:
+                        save_user_name(st.session_state.user_email, name.strip())
+                        st.session_state.user_name = name.strip()
+                        st.rerun()
+        return False
+
+    # Step 1: login form
     with col:
         st.markdown(
             "<h2 style='text-align:center; color:white; margin-bottom:1.5rem;'>"
@@ -288,13 +314,16 @@ def require_login() -> bool:
             )
             email = st.text_input("Email", placeholder="you@curative.com")
             password = st.text_input("Password", type="password")
-            submitted = st.form_submit_button("Log In", use_container_width=True, type="primary")
-            if submitted:
+            if st.form_submit_button("Log In", use_container_width=True, type="primary"):
                 if not email.strip():
                     st.error("Please enter your email.")
                 elif password == st.secrets.get("APP_PASSWORD", ""):
+                    email_clean = email.strip().lower()
+                    existing_name = get_user_name(email_clean)
                     st.session_state.authenticated = True
-                    st.session_state.user_email = email.strip().lower()
+                    st.session_state.user_email = email_clean
+                    if existing_name:
+                        st.session_state.user_name = existing_name
                     st.rerun()
                 else:
                     st.error("Incorrect password.")
@@ -308,9 +337,9 @@ if not require_login():
 # ── Sidebar ─────────────────────────────────────────────────────────────────
 subsidiaries = [s.strip() for s in st.secrets.get("SUBSIDIARIES", "Default").split(",")]
 
+if st.session_state.get("user_name"):
+    st.sidebar.markdown(f"#### Hi, {st.session_state.user_name}!")
 st.sidebar.title("Check Reconciliation")
-if st.session_state.get("user_email"):
-    st.sidebar.caption(f"👤 {st.session_state.user_email}")
 
 st.sidebar.markdown("""
 <style>

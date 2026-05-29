@@ -183,3 +183,19 @@ INSERT INTO subsidiary_accounts (subsidiary, account_number) VALUES
     ('CAdmin - LF', '26833523'),
     ('CHR - SF',    '26838851')
 ON CONFLICT DO NOTHING;
+
+
+-- ── user_profiles ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS user_profiles (
+    email        TEXT        PRIMARY KEY,
+    display_name TEXT        NOT NULL,
+    created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
+GRANT SELECT, INSERT, UPDATE ON user_profiles TO anon;
+DROP POLICY IF EXISTS "profiles_select" ON user_profiles;
+CREATE POLICY "profiles_select" ON user_profiles FOR SELECT TO anon USING (true);
+DROP POLICY IF EXISTS "profiles_insert" ON user_profiles;
+CREATE POLICY "profiles_insert" ON user_profiles FOR INSERT TO anon WITH CHECK (true);
+DROP POLICY IF EXISTS "profiles_update" ON user_profiles;
+CREATE POLICY "profiles_update" ON user_profiles FOR UPDATE TO anon USING (true) WITH CHECK (true);

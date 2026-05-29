@@ -241,6 +241,18 @@ def load_seed_checks(df: pd.DataFrame, subsidiary: str) -> dict:
     return {"inserted": len(df)}
 
 
+def get_user_name(email: str) -> str:
+    result = _client().table("user_profiles").select("display_name").eq("email", email).execute()
+    return result.data[0]["display_name"] if result.data else None
+
+
+def save_user_name(email: str, display_name: str) -> None:
+    _client().table("user_profiles").upsert(
+        {"email": email, "display_name": display_name},
+        on_conflict="email",
+    ).execute()
+
+
 def get_allowed_accounts(subsidiary: str) -> list:
     result = _client().table("subsidiary_accounts").select("account_number").eq("subsidiary", subsidiary).execute()
     return [r["account_number"] for r in result.data] if result.data else []
