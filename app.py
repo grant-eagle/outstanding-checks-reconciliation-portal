@@ -320,16 +320,55 @@ section[data-testid="stSidebar"] hr ~ .stRadio label[data-baseweb="radio"] {
     background: transparent !important;
     font-weight: normal !important;
 }
+/* Flex column sidebar so seed button can be pushed to bottom */
+section[data-testid="stSidebarUserContent"] {
+    display: flex !important;
+    flex-direction: column !important;
+    min-height: calc(100vh - 3rem) !important;
+}
+section[data-testid="stSidebarUserContent"] > [data-testid="stElementContainer"]:has(#sidebar-spacer) {
+    flex: 1 1 auto !important;
+}
+/* Seed upload button — subdued, full width */
+section[data-testid="stSidebar"] [data-testid="stElementContainer"]:has(#sidebar-spacer) ~ [data-testid="stElementContainer"] button {
+    width: 100% !important;
+    background: transparent !important;
+    border: 1px solid rgba(128,128,128,0.3) !important;
+    color: rgba(180,180,180,0.9) !important;
+    font-size: 0.85rem !important;
+    box-shadow: none !important;
+    justify-content: flex-start !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
+_main_pages = ["🚀 Upload Files", "📊 Reconciliation & Dashboard"]
+if "page" not in st.session_state:
+    st.session_state.page = _main_pages[0]
+    st.session_state._radio_page = _main_pages[0]
+
 subsidiary = st.sidebar.radio("", subsidiaries, label_visibility="collapsed")
 st.sidebar.divider()
-page = st.sidebar.radio("", ["🚀 Upload Files", "📊 Reconciliation & Dashboard", "⚙️ Seed Upload (Admin)"])
+
+_radio_idx = _main_pages.index(st.session_state._radio_page)
+_selected = st.sidebar.radio("", _main_pages, index=_radio_idx)
+if _selected != st.session_state._radio_page:
+    st.session_state.page = _selected
+    st.session_state._radio_page = _selected
+    st.rerun()
+
 st.sidebar.divider()
 if st.sidebar.button("Log Out"):
     st.session_state.authenticated = False
     st.rerun()
+
+# Spacer pushes seed button to the bottom
+st.sidebar.markdown('<div id="sidebar-spacer"></div>', unsafe_allow_html=True)
+if st.sidebar.button("⚙️ Seed Upload (Admin)", key="btn_seed_nav", use_container_width=True):
+    st.session_state.page = "⚙️ Seed Upload (Admin)"
+    st.rerun()
+
+page = st.session_state.page
 
 
 # ════════════════════════════════════════════════════════════════════════════
