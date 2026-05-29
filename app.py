@@ -283,8 +283,9 @@ st.sidebar.markdown("""
 <style>
 section[data-testid="stSidebar"] .stButton > button {
     width: 100%;
-    text-align: left;
+    display: flex;
     justify-content: flex-start;
+    text-align: left;
     border: none;
     background: transparent;
     color: inherit;
@@ -293,6 +294,11 @@ section[data-testid="stSidebar"] .stButton > button {
     font-weight: normal;
     box-shadow: none;
     transition: background 0.15s;
+}
+section[data-testid="stSidebar"] .stButton > button > div,
+section[data-testid="stSidebar"] .stButton > button p {
+    text-align: left !important;
+    width: 100%;
 }
 section[data-testid="stSidebar"] .stButton > button:hover {
     background: rgba(128,128,128,0.15) !important;
