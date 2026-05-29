@@ -275,7 +275,50 @@ if not require_login():
 subsidiaries = [s.strip() for s in st.secrets.get("SUBSIDIARIES", "Default").split(",")]
 
 st.sidebar.title("Check Reconciliation")
-subsidiary = st.sidebar.selectbox("Subsidiary", subsidiaries)
+
+if "subsidiary" not in st.session_state:
+    st.session_state.subsidiary = subsidiaries[0]
+
+st.sidebar.markdown("""
+<style>
+section[data-testid="stSidebar"] .stButton > button {
+    width: 100%;
+    text-align: left;
+    border: none;
+    background: transparent;
+    color: inherit;
+    padding: 0.4rem 1rem;
+    border-radius: 6px;
+    font-weight: normal;
+    box-shadow: none;
+    transition: background 0.15s;
+}
+section[data-testid="stSidebar"] .stButton > button:hover {
+    background: rgba(128,128,128,0.15) !important;
+    border: none;
+    box-shadow: none;
+}
+section[data-testid="stSidebar"] .stButton > button[kind="primary"] {
+    background: rgba(128,128,128,0.25) !important;
+    font-weight: 600;
+}
+section[data-testid="stSidebar"] .stButton > button[kind="primary"]:hover {
+    background: rgba(128,128,128,0.35) !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+for sub in subsidiaries:
+    if st.sidebar.button(
+        sub,
+        key=f"sub_{sub}",
+        use_container_width=True,
+        type="primary" if sub == st.session_state.subsidiary else "secondary",
+    ):
+        st.session_state.subsidiary = sub
+        st.rerun()
+
+subsidiary = st.session_state.subsidiary
 st.sidebar.divider()
 page = st.sidebar.radio("", ["Upload Files", "Reconciliation & Dashboard", "Seed Upload (Admin)"])
 st.sidebar.divider()
