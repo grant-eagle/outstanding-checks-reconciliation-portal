@@ -1,4 +1,5 @@
 import pandas as pd
+from itertools import combinations
 
 
 def reconcile_ach(issued_ach: pd.DataFrame, cleared_ach: pd.DataFrame) -> dict:
@@ -84,50 +85,44 @@ def reconcile_ach(issued_ach: pd.DataFrame, cleared_ach: pd.DataFrame) -> dict:
                     used_issued.add(i)
                 used_cleared.add(j)
 
-    # ── Pass 3: Cluster bank dates ±5 days apart → remaining issued ───────
+    # ── Pass 3: 1 issued → subset of bank transactions within ±7 days ────
     # Handles cases where the bank splits a single issued batch across
-    # multiple clearing dates that fall within a 5-day window.
-    if not cleared.empty:
-        rem_cleared = (
-            cleared[~cleared.index.isin(used_cleared)]
-            .sort_values("date")
-            .copy()
-        )
-        if not rem_cleared.empty:
-            clusters = []
-            current_cluster = [rem_cleared.index[0]]
-            for k in range(1, len(rem_cleared)):
-                prev_date = cleared.loc[current_cluster[-1], "date"]
-                curr_date = rem_cleared.iloc[k]["date"]
-                if abs((curr_date - prev_date).days) <= 5:
-                    current_cluster.append(rem_cleared.index[k])
-                else:
-                    clusters.append(current_cluster)
-                    current_cluster = [rem_cleared.index[k]]
-            clusters.append(current_cluster)
+    # multiple clearing transactions. Uses subset-sum so only the
+    # transactions that add up to the issued amount are consumed,
+    # leaving unrelated same-window transactions available for other rows.
+    for i in [x for x in issued.index if x not in used_issued]:
+        i_row = issued.loc[i]
+        candidates_j = [
+            j for j in cleared.index
+            if j not in used_cleared
+            and abs((cleared.loc[j, "date"] - i_row["payment_date"]).days) <= 7
+        ]
+        if not candidates_j:
+            continue
 
-            for cluster in clusters:
-                cluster_sum = round(sum(cleared.loc[k, "amount"] for k in cluster), 2)
-                cluster_dates = [cleared.loc[k, "date"] for k in cluster]
+        matched_subset = None
+        for size in range(1, len(candidates_j) + 1):
+            for subset in combinations(candidates_j, size):
+                if abs(round(sum(cleared.loc[j, "amount"] for j in subset), 2) - i_row["amount"]) <= 0.01:
+                    matched_subset = subset
+                    break
+            if matched_subset:
+                break
 
-                for i in [x for x in issued.index if x not in used_issued]:
-                    i_row = issued.loc[i]
-                    in_window = any(abs((d - i_row["payment_date"]).days) <= 7 for d in cluster_dates)
-                    if abs(cluster_sum - i_row["amount"]) <= 0.01 and in_window:
-                        for k in cluster:
-                            c_row = cleared.loc[k]
-                            matched_rows.append({
-                                "payment_date": i_row["payment_date"],
-                                "issued_amount": i_row["amount"],
-                                "cleared_date": c_row["date"],
-                                "cleared_amount": c_row["amount"],
-                                "days_difference": int(abs((c_row["date"] - i_row["payment_date"]).days)),
-                                "match_type": "cluster",
-                            })
-                        used_issued.add(i)
-                        for k in cluster:
-                            used_cleared.add(k)
-                        break
+        if matched_subset:
+            for j in matched_subset:
+                c_row = cleared.loc[j]
+                matched_rows.append({
+                    "payment_date": i_row["payment_date"],
+                    "issued_amount": i_row["amount"],
+                    "cleared_date": c_row["date"],
+                    "cleared_amount": c_row["amount"],
+                    "days_difference": int(abs((c_row["date"] - i_row["payment_date"]).days)),
+                    "match_type": "1-to-n" if len(matched_subset) > 1 else "1-to-1",
+                })
+            used_issued.add(i)
+            for j in matched_subset:
+                used_cleared.add(j)
 
     outstanding_rows = [
         {"payment_date": issued.loc[i, "payment_date"], "amount": issued.loc[i, "amount"]}
