@@ -426,6 +426,12 @@ st.components.v1.html("""
         p.document.addEventListener(e, resetTimers, { passive: true });
     });
 
+    // Persist browser timezone to a cookie so Python can convert UTC timestamps
+    try {
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        p.document.cookie = 'check_recon_tz=' + encodeURIComponent(tz) + '; path=/; max-age=31536000; SameSite=Lax';
+    } catch(e) {}
+
     resetTimers();
 })();
 </script>
@@ -1110,7 +1116,15 @@ elif page == "🔑 System Admin":
         st.info("No audit log entries yet.")
     else:
         display = log_df[["created_at", "display_name", "email", "action", "details"]].copy()
-        display["created_at"] = pd.to_datetime(display["created_at"]).dt.strftime("%m/%d/%Y %I:%M %p UTC")
+        user_tz = _cookies.get("check_recon_tz") or "UTC"
+        try:
+            display["created_at"] = (
+                pd.to_datetime(display["created_at"], utc=True)
+                .dt.tz_convert(user_tz)
+                .dt.strftime("%m/%d/%Y %I:%M %p")
+            )
+        except Exception:
+            display["created_at"] = pd.to_datetime(display["created_at"]).dt.strftime("%m/%d/%Y %I:%M %p UTC")
         display["action"] = display["action"].str.replace("_", " ").str.title()
         display.columns = ["Timestamp", "Name", "Email", "Action", "Details"]
 
