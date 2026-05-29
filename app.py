@@ -283,6 +283,9 @@ section[data-testid="stSidebar"] .stRadio label {
     padding: 4px 16px;
     border-radius: 6px;
     cursor: pointer;
+    width: 100%;
+    display: flex;
+    align-items: center;
 }
 section[data-testid="stSidebar"] .stRadio label > div:first-child {
     display: none;
