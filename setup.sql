@@ -3,6 +3,23 @@
 -- Safe to run multiple times from a single SQL Editor tab.
 -- ============================================================
 
+-- ── App secret configuration ──────────────────────────────
+-- Replace <YOUR_APP_SECRET> with the value from your Streamlit
+-- secrets (APP_SECRET). Run this once whenever you rotate the secret.
+-- ALTER DATABASE postgres SET app.settings.app_secret TO '<YOUR_APP_SECRET>';
+
+-- Shorthand used in every RLS policy below.
+-- A request is valid only when the x-app-secret header matches the
+-- value stored in the database config. Requests without the header
+-- (e.g. direct API calls with just the anon key) are denied.
+CREATE OR REPLACE FUNCTION _app_secret_ok() RETURNS boolean
+    LANGUAGE sql SECURITY DEFINER SET search_path = public AS
+$$
+    SELECT coalesce(
+        current_setting('request.headers', true)::json->>'x-app-secret', ''
+    ) = current_setting('app.settings.app_secret', true)
+$$;
+
 
 -- ── issued_checks ─────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS issued_checks (
@@ -19,9 +36,9 @@ CREATE INDEX IF NOT EXISTS idx_issued_subsidiary   ON issued_checks(subsidiary);
 ALTER TABLE issued_checks ENABLE ROW LEVEL SECURITY;
 GRANT SELECT, INSERT ON issued_checks TO anon;
 DROP POLICY IF EXISTS "issued_select" ON issued_checks;
-CREATE POLICY "issued_select" ON issued_checks FOR SELECT TO anon USING (true);
+CREATE POLICY "issued_select" ON issued_checks FOR SELECT TO anon USING (_app_secret_ok());
 DROP POLICY IF EXISTS "issued_insert" ON issued_checks;
-CREATE POLICY "issued_insert" ON issued_checks FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "issued_insert" ON issued_checks FOR INSERT TO anon WITH CHECK (_app_secret_ok());
 
 
 -- ── cleared_checks ────────────────────────────────────────
@@ -41,9 +58,9 @@ CREATE INDEX IF NOT EXISTS idx_cleared_subsidiary   ON cleared_checks(subsidiary
 ALTER TABLE cleared_checks ENABLE ROW LEVEL SECURITY;
 GRANT SELECT, INSERT ON cleared_checks TO anon;
 DROP POLICY IF EXISTS "cleared_select" ON cleared_checks;
-CREATE POLICY "cleared_select" ON cleared_checks FOR SELECT TO anon USING (true);
+CREATE POLICY "cleared_select" ON cleared_checks FOR SELECT TO anon USING (_app_secret_ok());
 DROP POLICY IF EXISTS "cleared_insert" ON cleared_checks;
-CREATE POLICY "cleared_insert" ON cleared_checks FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "cleared_insert" ON cleared_checks FOR INSERT TO anon WITH CHECK (_app_secret_ok());
 
 
 -- ── seed_checks ───────────────────────────────────────────
@@ -60,9 +77,9 @@ CREATE INDEX IF NOT EXISTS idx_seed_subsidiary   ON seed_checks(subsidiary);
 ALTER TABLE seed_checks ENABLE ROW LEVEL SECURITY;
 GRANT SELECT, INSERT ON seed_checks TO anon;
 DROP POLICY IF EXISTS "seed_select" ON seed_checks;
-CREATE POLICY "seed_select" ON seed_checks FOR SELECT TO anon USING (true);
+CREATE POLICY "seed_select" ON seed_checks FOR SELECT TO anon USING (_app_secret_ok());
 DROP POLICY IF EXISTS "seed_insert" ON seed_checks;
-CREATE POLICY "seed_insert" ON seed_checks FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "seed_insert" ON seed_checks FOR INSERT TO anon WITH CHECK (_app_secret_ok());
 
 
 -- ── voided_checks ─────────────────────────────────────────
@@ -79,9 +96,9 @@ CREATE INDEX IF NOT EXISTS idx_voided_subsidiary   ON voided_checks(subsidiary);
 ALTER TABLE voided_checks ENABLE ROW LEVEL SECURITY;
 GRANT SELECT, INSERT ON voided_checks TO anon;
 DROP POLICY IF EXISTS "voided_select" ON voided_checks;
-CREATE POLICY "voided_select" ON voided_checks FOR SELECT TO anon USING (true);
+CREATE POLICY "voided_select" ON voided_checks FOR SELECT TO anon USING (_app_secret_ok());
 DROP POLICY IF EXISTS "voided_insert" ON voided_checks;
-CREATE POLICY "voided_insert" ON voided_checks FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "voided_insert" ON voided_checks FOR INSERT TO anon WITH CHECK (_app_secret_ok());
 
 
 -- ── subsidiary_cycles ─────────────────────────────────────
@@ -94,9 +111,9 @@ CREATE TABLE IF NOT EXISTS subsidiary_cycles (
 ALTER TABLE subsidiary_cycles ENABLE ROW LEVEL SECURITY;
 GRANT SELECT, INSERT ON subsidiary_cycles TO anon;
 DROP POLICY IF EXISTS "cycles_select" ON subsidiary_cycles;
-CREATE POLICY "cycles_select" ON subsidiary_cycles FOR SELECT TO anon USING (true);
+CREATE POLICY "cycles_select" ON subsidiary_cycles FOR SELECT TO anon USING (_app_secret_ok());
 DROP POLICY IF EXISTS "cycles_insert" ON subsidiary_cycles;
-CREATE POLICY "cycles_insert" ON subsidiary_cycles FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "cycles_insert" ON subsidiary_cycles FOR INSERT TO anon WITH CHECK (_app_secret_ok());
 INSERT INTO subsidiary_cycles (subsidiary, cycle_identifier) VALUES
     ('CIC - FF',    'Fully Insured Subscriber Payment Cycle'),
     ('CIC - FF',    'Fully Insured Supplier Payment Cycle'),
@@ -121,9 +138,9 @@ CREATE INDEX IF NOT EXISTS idx_issued_ach_subsidiary ON issued_ach(subsidiary);
 ALTER TABLE issued_ach ENABLE ROW LEVEL SECURITY;
 GRANT SELECT, INSERT ON issued_ach TO anon;
 DROP POLICY IF EXISTS "issued_ach_select" ON issued_ach;
-CREATE POLICY "issued_ach_select" ON issued_ach FOR SELECT TO anon USING (true);
+CREATE POLICY "issued_ach_select" ON issued_ach FOR SELECT TO anon USING (_app_secret_ok());
 DROP POLICY IF EXISTS "issued_ach_insert" ON issued_ach;
-CREATE POLICY "issued_ach_insert" ON issued_ach FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "issued_ach_insert" ON issued_ach FOR INSERT TO anon WITH CHECK (_app_secret_ok());
 
 
 -- ── cleared_ach ───────────────────────────────────────────
@@ -139,9 +156,9 @@ CREATE INDEX IF NOT EXISTS idx_cleared_ach_subsidiary ON cleared_ach(subsidiary)
 ALTER TABLE cleared_ach ENABLE ROW LEVEL SECURITY;
 GRANT SELECT, INSERT ON cleared_ach TO anon;
 DROP POLICY IF EXISTS "cleared_ach_select" ON cleared_ach;
-CREATE POLICY "cleared_ach_select" ON cleared_ach FOR SELECT TO anon USING (true);
+CREATE POLICY "cleared_ach_select" ON cleared_ach FOR SELECT TO anon USING (_app_secret_ok());
 DROP POLICY IF EXISTS "cleared_ach_insert" ON cleared_ach;
-CREATE POLICY "cleared_ach_insert" ON cleared_ach FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "cleared_ach_insert" ON cleared_ach FOR INSERT TO anon WITH CHECK (_app_secret_ok());
 
 
 -- ── discrepancy_annotations ───────────────────────────────
@@ -158,11 +175,11 @@ CREATE TABLE IF NOT EXISTS discrepancy_annotations (
 ALTER TABLE discrepancy_annotations ENABLE ROW LEVEL SECURITY;
 GRANT SELECT, INSERT, UPDATE ON discrepancy_annotations TO anon;
 DROP POLICY IF EXISTS "annotations_select" ON discrepancy_annotations;
-CREATE POLICY "annotations_select" ON discrepancy_annotations FOR SELECT TO anon USING (true);
+CREATE POLICY "annotations_select" ON discrepancy_annotations FOR SELECT TO anon USING (_app_secret_ok());
 DROP POLICY IF EXISTS "annotations_insert" ON discrepancy_annotations;
-CREATE POLICY "annotations_insert" ON discrepancy_annotations FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "annotations_insert" ON discrepancy_annotations FOR INSERT TO anon WITH CHECK (_app_secret_ok());
 DROP POLICY IF EXISTS "annotations_update" ON discrepancy_annotations;
-CREATE POLICY "annotations_update" ON discrepancy_annotations FOR UPDATE TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "annotations_update" ON discrepancy_annotations FOR UPDATE TO anon USING (_app_secret_ok()) WITH CHECK (_app_secret_ok());
 
 
 -- ── subsidiary_accounts ───────────────────────────────────
@@ -175,9 +192,9 @@ CREATE TABLE IF NOT EXISTS subsidiary_accounts (
 ALTER TABLE subsidiary_accounts ENABLE ROW LEVEL SECURITY;
 GRANT SELECT, INSERT ON subsidiary_accounts TO anon;
 DROP POLICY IF EXISTS "accounts_select" ON subsidiary_accounts;
-CREATE POLICY "accounts_select" ON subsidiary_accounts FOR SELECT TO anon USING (true);
+CREATE POLICY "accounts_select" ON subsidiary_accounts FOR SELECT TO anon USING (_app_secret_ok());
 DROP POLICY IF EXISTS "accounts_insert" ON subsidiary_accounts;
-CREATE POLICY "accounts_insert" ON subsidiary_accounts FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "accounts_insert" ON subsidiary_accounts FOR INSERT TO anon WITH CHECK (_app_secret_ok());
 INSERT INTO subsidiary_accounts (subsidiary, account_number) VALUES
     ('CIC - FF',    '26830036'),
     ('CAdmin - LF', '26833523'),
@@ -198,9 +215,9 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at DESC
 ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
 GRANT SELECT, INSERT ON audit_log TO anon;
 DROP POLICY IF EXISTS "audit_select" ON audit_log;
-CREATE POLICY "audit_select" ON audit_log FOR SELECT TO anon USING (true);
+CREATE POLICY "audit_select" ON audit_log FOR SELECT TO anon USING (_app_secret_ok());
 DROP POLICY IF EXISTS "audit_insert" ON audit_log;
-CREATE POLICY "audit_insert" ON audit_log FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "audit_insert" ON audit_log FOR INSERT TO anon WITH CHECK (_app_secret_ok());
 
 
 -- ── user_profiles ─────────────────────────────────────────
@@ -212,8 +229,8 @@ CREATE TABLE IF NOT EXISTS user_profiles (
 ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
 GRANT SELECT, INSERT, UPDATE ON user_profiles TO anon;
 DROP POLICY IF EXISTS "profiles_select" ON user_profiles;
-CREATE POLICY "profiles_select" ON user_profiles FOR SELECT TO anon USING (true);
+CREATE POLICY "profiles_select" ON user_profiles FOR SELECT TO anon USING (_app_secret_ok());
 DROP POLICY IF EXISTS "profiles_insert" ON user_profiles;
-CREATE POLICY "profiles_insert" ON user_profiles FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "profiles_insert" ON user_profiles FOR INSERT TO anon WITH CHECK (_app_secret_ok());
 DROP POLICY IF EXISTS "profiles_update" ON user_profiles;
-CREATE POLICY "profiles_update" ON user_profiles FOR UPDATE TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "profiles_update" ON user_profiles FOR UPDATE TO anon USING (_app_secret_ok()) WITH CHECK (_app_secret_ok());

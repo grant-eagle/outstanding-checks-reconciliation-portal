@@ -6,7 +6,11 @@ BATCH_SIZE = 500
 
 
 def _client() -> Client:
-    return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+    client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+    client.postgrest.session.headers.update({
+        "x-app-secret": st.secrets.get("APP_SECRET", "")
+    })
+    return client
 
 
 def _clean_amount(series: pd.Series) -> pd.Series:
