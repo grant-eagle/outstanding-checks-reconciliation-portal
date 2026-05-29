@@ -256,14 +256,48 @@ def require_login() -> bool:
     if st.session_state.get("authenticated"):
         return True
 
-    st.title("Check Reconciliation Portal")
-    password = st.text_input("Password", type="password", key="pw_input")
-    if st.button("Log In"):
-        if password == st.secrets.get("APP_PASSWORD", ""):
-            st.session_state.authenticated = True
-            st.rerun()
-        else:
-            st.error("Incorrect password.")
+    st.markdown("""
+    <style>
+    .stApp, [data-testid="stMain"] { background-color: #1b2838 !important; }
+    [data-testid="stHeader"] { background-color: transparent !important; }
+    [data-testid="stForm"] {
+        background: white;
+        border-radius: 12px;
+        padding: 1.5rem 2rem 2rem;
+        border: none !important;
+        box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+    }
+    [data-testid="stForm"] label,
+    [data-testid="stForm"] p { color: #333 !important; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    _, col, _ = st.columns([1, 1.1, 1])
+    with col:
+        st.markdown(
+            "<h2 style='text-align:center; color:white; margin-bottom:1.5rem;'>"
+            "🏦 Check Reconciliation Portal</h2>",
+            unsafe_allow_html=True,
+        )
+        with st.form("login_form"):
+            st.markdown(
+                "<h4 style='text-align:center; color:#333; margin-bottom:1rem;'>"
+                "Sign in to continue</h4>",
+                unsafe_allow_html=True,
+            )
+            email = st.text_input("Email", placeholder="you@curative.com")
+            password = st.text_input("Password", type="password")
+            submitted = st.form_submit_button("Log In", use_container_width=True, type="primary")
+            if submitted:
+                if not email.strip():
+                    st.error("Please enter your email.")
+                elif password == st.secrets.get("APP_PASSWORD", ""):
+                    st.session_state.authenticated = True
+                    st.session_state.user_email = email.strip().lower()
+                    st.rerun()
+                else:
+                    st.error("Incorrect password.")
     return False
 
 
@@ -275,6 +309,8 @@ if not require_login():
 subsidiaries = [s.strip() for s in st.secrets.get("SUBSIDIARIES", "Default").split(",")]
 
 st.sidebar.title("Check Reconciliation")
+if st.session_state.get("user_email"):
+    st.sidebar.caption(f"👤 {st.session_state.user_email}")
 
 st.sidebar.markdown("""
 <style>
