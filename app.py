@@ -281,11 +281,11 @@ if "subsidiary" not in st.session_state:
 
 st.sidebar.markdown("""
 <style>
-section[data-testid="stSidebar"] .stButton > button {
+section[data-testid="stSidebar"] .stButton button {
     width: 100%;
-    display: flex;
-    justify-content: flex-start;
-    text-align: left;
+    display: flex !important;
+    justify-content: flex-start !important;
+    text-align: left !important;
     border: none;
     background: transparent;
     color: inherit;
@@ -295,21 +295,20 @@ section[data-testid="stSidebar"] .stButton > button {
     box-shadow: none;
     transition: background 0.15s;
 }
-section[data-testid="stSidebar"] .stButton > button > div,
-section[data-testid="stSidebar"] .stButton > button p {
+section[data-testid="stSidebar"] .stButton button * {
     text-align: left !important;
-    width: 100%;
+    justify-content: flex-start !important;
 }
-section[data-testid="stSidebar"] .stButton > button:hover {
+section[data-testid="stSidebar"] .stButton button:hover {
     background: rgba(128,128,128,0.15) !important;
     border: none;
     box-shadow: none;
 }
-section[data-testid="stSidebar"] .stButton > button[kind="primary"] {
+section[data-testid="stSidebar"] .stButton button[kind="primary"] {
     background: rgba(128,128,128,0.25) !important;
     font-weight: 600;
 }
-section[data-testid="stSidebar"] .stButton > button[kind="primary"]:hover {
+section[data-testid="stSidebar"] .stButton button[kind="primary"]:hover {
     background: rgba(128,128,128,0.35) !important;
 }
 </style>
