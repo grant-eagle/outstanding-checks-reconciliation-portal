@@ -279,7 +279,7 @@ st.sidebar.title("Check Reconciliation")
 st.sidebar.markdown("""
 <style>
 /* Override the fit-content width on the stElementContainer wrapper */
-section[data-testid="stSidebar"] [data-testid="stElementContainer"]:has(.stRadio) {
+section[data-testid="stSidebar"] [data-testid="stElementContainer"][width="fit-content"] {
     width: 100% !important;
 }
 /* Stack option rows vertically full-width */
