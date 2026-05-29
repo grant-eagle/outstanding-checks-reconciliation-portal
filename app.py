@@ -346,10 +346,16 @@ def require_login() -> bool:
 
 # Handle auto-logout from inactivity timer
 if st.query_params.get("auto_logout") == "1":
+    preserved_tz = st.query_params.get("tz", "UTC")
     st.session_state.clear()
     st.session_state["inactivity_logout"] = True
+    st.session_state["user_tz"] = preserved_tz
     st.query_params.clear()
     st.rerun()
+
+# Capture browser timezone from query param on first detection
+if "user_tz" not in st.session_state and st.query_params.get("tz"):
+    st.session_state.user_tz = st.query_params.get("tz")
 
 if not require_login():
     st.stop()
@@ -426,10 +432,14 @@ st.components.v1.html("""
         p.document.addEventListener(e, resetTimers, { passive: true });
     });
 
-    // Persist browser timezone to a cookie so Python can convert UTC timestamps
+    // Persist browser timezone in the URL so Python can convert UTC timestamps
     try {
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        p.document.cookie = 'check_recon_tz=' + encodeURIComponent(tz) + '; path=/; max-age=31536000; SameSite=Lax';
+        const url = new URL(p.location.href);
+        if (!url.searchParams.get('tz')) {
+            url.searchParams.set('tz', tz);
+            p.history.replaceState(null, '', url.toString());
+        }
     } catch(e) {}
 
     resetTimers();
@@ -1116,7 +1126,7 @@ elif page == "🔑 System Admin":
         st.info("No audit log entries yet.")
     else:
         display = log_df[["created_at", "display_name", "email", "action", "details"]].copy()
-        user_tz = _cookies.get("check_recon_tz") or "UTC"
+        user_tz = st.session_state.get("user_tz", "UTC")
         try:
             display["created_at"] = (
                 pd.to_datetime(display["created_at"], utc=True)
