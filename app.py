@@ -278,14 +278,19 @@ st.sidebar.title("Check Reconciliation")
 
 st.sidebar.markdown("""
 <style>
-/* Subsidiary radio — stack items vertically full-width, no circles */
+/* Override the fit-content width on the stElementContainer wrapper */
+section[data-testid="stSidebar"] [data-testid="stElementContainer"]:has(.stRadio) {
+    width: 100% !important;
+}
+/* Stack option rows vertically full-width */
 section[data-testid="stSidebar"] .stRadio [role="radiogroup"] {
     display: flex !important;
     flex-direction: column !important;
-    width: 100%;
+    width: 100% !important;
     gap: 2px;
 }
-section[data-testid="stSidebar"] .stRadio [role="radiogroup"] label {
+/* Option labels — use data-baseweb to avoid hitting the group label */
+section[data-testid="stSidebar"] .stRadio label[data-baseweb="radio"] {
     width: 100% !important;
     display: block !important;
     padding: 4px 16px;
@@ -293,27 +298,27 @@ section[data-testid="stSidebar"] .stRadio [role="radiogroup"] label {
     cursor: pointer;
     box-sizing: border-box;
 }
-section[data-testid="stSidebar"] .stRadio [role="radiogroup"] label > div:first-child {
-    display: none;
+section[data-testid="stSidebar"] .stRadio label[data-baseweb="radio"] > div:first-child {
+    display: none !important;
 }
-section[data-testid="stSidebar"] .stRadio [role="radiogroup"] label:has(input:checked) {
+section[data-testid="stSidebar"] .stRadio label[data-baseweb="radio"]:has(input:checked) {
     background: rgba(128,128,128,0.25);
     font-weight: 600;
 }
-section[data-testid="stSidebar"] .stRadio [role="radiogroup"] label:hover:not(:has(input:checked)) {
+section[data-testid="stSidebar"] .stRadio label[data-baseweb="radio"]:hover:not(:has(input:checked)) {
     background: rgba(128,128,128,0.12);
 }
 /* Page nav radio (after first divider) — restore default appearance */
-section[data-testid="stSidebar"] hr ~ .stRadio [role="radiogroup"] label > div:first-child {
+section[data-testid="stSidebar"] hr ~ .stRadio label[data-baseweb="radio"] > div:first-child {
     display: flex !important;
 }
-section[data-testid="stSidebar"] hr ~ .stRadio [role="radiogroup"] label {
+section[data-testid="stSidebar"] hr ~ .stRadio label[data-baseweb="radio"] {
+    width: auto !important;
+    display: flex !important;
     padding: 0 !important;
     border-radius: 0 !important;
     background: transparent !important;
     font-weight: normal !important;
-    width: auto !important;
-    display: flex !important;
 }
 </style>
 """, unsafe_allow_html=True)
