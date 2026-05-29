@@ -338,7 +338,7 @@ if not require_login():
 subsidiaries = [s.strip() for s in st.secrets.get("SUBSIDIARIES", "Default").split(",")]
 
 if st.session_state.get("user_name"):
-    st.sidebar.markdown(f"#### Hi, {st.session_state.user_name}!")
+    st.sidebar.markdown(f"# Hi, {st.session_state.user_name}!")
 st.sidebar.title("Check Reconciliation")
 
 st.sidebar.markdown("""
