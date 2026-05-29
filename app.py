@@ -279,17 +279,19 @@ st.sidebar.title("Check Reconciliation")
 st.sidebar.markdown("""
 <style>
 /* Subsidiary radio — hide circles, highlight selected, left-aligned */
+section[data-testid="stSidebar"] .stRadio,
 section[data-testid="stSidebar"] .stRadio > div,
+section[data-testid="stSidebar"] .stRadio > div > div,
 section[data-testid="stSidebar"] .stRadio [role="radiogroup"] {
-    width: 100%;
+    width: 100% !important;
+    box-sizing: border-box !important;
 }
 section[data-testid="stSidebar"] .stRadio label {
     padding: 4px 16px;
     border-radius: 6px;
     cursor: pointer;
-    width: 100%;
-    display: flex;
-    align-items: center;
+    width: 100% !important;
+    display: block !important;
     box-sizing: border-box;
 }
 section[data-testid="stSidebar"] .stRadio label > div:first-child {
